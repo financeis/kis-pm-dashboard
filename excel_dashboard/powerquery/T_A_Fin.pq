@@ -26,7 +26,9 @@ let
             P = let j = fnKisGet("/uapi/domestic-stock/v1/quotations/inquire-price", "FHKST01010100",
                         [FID_COND_MRKT_DIV_CODE = "J", FID_INPUT_ISCD = code]), o = Record.FieldOrDefault(j, "output", null)
                 in if o is record then o else [],
-            FyeIn = try Number.From(Text.Trim(Text.From(Record.FieldOrDefault(P, "stac_month", "")))) otherwise null,
+            // 원값은 try 밖에서 읽음 — 시세 호출 실패가 '12월 결산' 가정으로 묻히지 않고 표 실패(직전 값 유지)로 가게
+            FyeRaw = Record.FieldOrDefault(P, "stac_month", null),
+            FyeIn = if FyeRaw = null then null else try Number.From(Text.Trim(Text.From(FyeRaw))) otherwise null,
             Fye = if FyeIn = null or FyeIn < 1 or FyeIn > 12 then 12 else FyeIn,
             FirstMonth = Number.Mod(Fye + 2, 12) + 1,
             Val = (r as record, k as text) as nullable number =>
