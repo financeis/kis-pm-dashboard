@@ -1,6 +1,10 @@
 // T_Rank : 시장 주도주/특징주 순위 (거래대금·거래량급증·등락률·외국인/기관 순매수·신고가근접)
 //  - 순위 API: 거래량순위 FHPST01710000, 등락률 FHPST01700000, 기관·외국인 가집계 FHPTJ04400000, 신고/신저근접 FHPST01870000
-//  - ETF/ETN/SPAC 제외 후, 종목DB(tblUniverse)에 있는 개별 종목만 남깁니다.
+//  - 시장 전체 개별종목(spec R19, 2026-10-01 T22): API의 ETF/ETN/SPAC 제외 + 종목DB(tblUniverse)에 있는 종목만(ETF·ETN·리츠는
+//    종목DB에 없음) + 종목DB의 SPAC = Y 제외. 대회편입으로는 거르지 않는다(9/30 뒤 주도주까지 보이게).
+//  - 열 `대회` = ★(대회 종목) / 공란 — fnClassify의 대회편입(명단 ± 수정표; 규칙을 여기서 다시 구현하지 않음).
+//    종목명은 바꾸지 않는다(화면의 보유·관심 강조가 종목명으로 찾기 때문). 화면은 종목명 옆 칸에 ★, 대회 밖은 회색 글꼴.
+//  - 거른 뒤 목록별 순위를 다시 매긴다(원래 순서 기준). 섹터·시장은 종목DB 값(섹터 = 설정 sector_basis 기준).
 let
     Main =
         let
@@ -73,32 +77,43 @@ let
             // 원래 순서(목록 순서 + API 순위)를 조인 전에 기록 — 조인은 행 순서를 보장하지 않음
             T = Table.AddIndexColumn(T0, "__ord", 0, 1, Int64.Type),
 
-            // 종목DB(이전 새로고침 결과)가 있으면 개별종목만 남기고 섹터를 붙임
-            U = try Table.SelectColumns(Excel.CurrentWorkbook(){[Name = "tblUniverse"]}[Content], {"종목코드", "섹터", "시장", "대회편입"}) otherwise null,
+            // 종목DB(이전 새로고침 결과)가 있으면 시장 전체 개별종목(종목DB에 있는 종목, SPAC 제외)만 남기고 섹터·시장을 붙임.
+            // 종목DB가 없거나 비었으면 거르지 않는다(API의 ETF·ETN·SPAC 제외만 적용)
+            U0 = try Excel.CurrentWorkbook(){[Name = "tblUniverse"]}[Content] otherwise null,
+            U = if U0 = null or not Table.HasColumns(U0, "종목코드") then null
+                else Table.Buffer(Table.Distinct(Table.SelectColumns(U0, {"종목코드", "섹터", "시장", "SPAC", "KRX업종"}, MissingField.UseNull), {"종목코드"})),
             Filtered =
-                if U = null or Table.RowCount(U) = 0 then Table.AddColumn(Table.AddColumn(T, "섹터", each null), "시장", each null)
+                if U = null or Table.RowCount(U) = 0 then
+                    Table.AddColumn(Table.AddColumn(Table.AddColumn(T, "섹터", each null), "시장", each null), "KRX업종", each null)
                 else
                     let
-                        J = Table.NestedJoin(T, {"종목코드"}, U, {"종목코드"}, "u", JoinKind.LeftOuter),
-                        E = Table.ExpandTableColumn(J, "u", {"섹터", "시장", "대회편입"}),
-                        K = Table.SelectRows(E, each [순위] = 0 or [대회편입] = "Y")
+                        Uin = Table.AddColumn(U, "__in", each true, type logical),
+                        J = Table.NestedJoin(T, {"종목코드"}, Uin, {"종목코드"}, "u", JoinKind.LeftOuter),
+                        E = Table.ExpandTableColumn(J, "u", {"섹터", "시장", "SPAC", "KRX업종", "__in"}),
+                        K = Table.SelectRows(E, each [순위] = 0 or ([__in] = true and [SPAC] <> "Y"))
                     in
-                        Table.RemoveColumns(K, {"대회편입"}),
+                        Table.RemoveColumns(K, {"SPAC", "__in"}),
+            // 대회 ★ = fnClassify의 대회편입 Y (오류 행처럼 종목코드가 없는 행은 빼고 넘김 → 공란)
+            ClsIn = Table.SelectColumns(Table.SelectRows(Filtered, each [종목코드] <> null and [종목코드] <> ""), {"종목코드", "KRX업종"}),
+            Members = List.Buffer(Table.SelectRows(fnClassify(ClsIn), each [대회편입] = "Y")[종목코드]),
+            Starred = Table.AddColumn(Table.RemoveColumns(Filtered, {"KRX업종"}), "대회", each
+                let c = if [종목코드] = null then null else Text.Upper(Text.Trim(Text.From([종목코드])))
+                in if c <> null and List.Contains(Members, c) then "★" else null, type text),
             // 필터 후 목록별 순위 다시 매기기 (원래 순서 기준)
-            Ordered = Table.Sort(Filtered, {{"__ord", Order.Ascending}}),
+            Ordered = Table.Sort(Starred, {{"__ord", Order.Ascending}}),
             Regroup = Table.Group(Ordered, {"목록"}, {{"t", each
                 Table.AddIndexColumn(Table.Sort(Table.RemoveColumns(_, {"순위"}), {{"__ord", Order.Ascending}}), "순위", 1, 1, Int64.Type), type table}}),
-            Expanded = Table.ExpandTableColumn(Regroup, "t", {"순위", "종목코드", "종목명", "현재가", "등락률", "거래량", "거래대금억", "지표", "지표명", "섹터", "시장", "__ord"}),
+            Expanded = Table.ExpandTableColumn(Regroup, "t", {"순위", "종목코드", "종목명", "현재가", "등락률", "거래량", "거래대금억", "지표", "지표명", "섹터", "시장", "대회", "__ord"}),
             Sorted = Table.Sort(Expanded, {{"__ord", Order.Ascending}}),
             Final = Table.AddColumn(Table.RemoveColumns(Sorted, {"__ord"}), "조회시각", each Now, type datetime),
             Typed = Table.TransformColumnTypes(Final, {{"목록", type text}, {"순위", Int64.Type}, {"종목코드", type text}, {"종목명", type text},
                 {"현재가", type number}, {"등락률", type number}, {"거래량", type number}, {"거래대금억", type number}, {"지표", type number},
-                {"지표명", type text}, {"섹터", type text}, {"시장", type text}}),
+                {"지표명", type text}, {"섹터", type text}, {"시장", type text}, {"대회", type text}}),
             Keyed = Table.AddColumn(Typed, "키", each [목록] & "|" & Text.From([순위]), type text)
         in
             Keyed,
     // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지
     Tried = try Table.Buffer(Main),
-    Final = if Tried[HasError] then fnFallback("tblRank", {"목록", "순위", "종목코드", "종목명", "현재가", "등락률", "거래량", "거래대금억", "지표", "지표명", "섹터", "시장", "조회시각", "키"}, Tried[Error][Message]) else Tried[Value]
+    Final = if Tried[HasError] then fnFallback("tblRank", {"목록", "순위", "종목코드", "종목명", "현재가", "등락률", "거래량", "거래대금억", "지표", "지표명", "섹터", "시장", "대회", "조회시각", "키"}, Tried[Error][Message]) else Tried[Value]
 in
     Final
