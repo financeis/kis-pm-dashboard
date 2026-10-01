@@ -768,7 +768,8 @@ class Builder:
     def merged_settings(self) -> list[tuple]:
         """설정 표 행 (키, 항목, 값, 설명). 이관 원본이 있으면 기존 키는 사용자 값을 유지하고 새 키는 기본값을 더한다(docs/business-rules.md의 '사용자 데이터 보존').
         순서는 빌더 순서(숫자 서식·검증 목록이 키로 찾음), 원본에만 있는 키는 뒤에 그대로 붙인다(사용자 데이터 보존).
-        cfg_path는 --cfg를 직접 준 경우에만 그 값으로 바꾼다."""
+        cfg_path는 --cfg를 직접 줬거나 이관 원본의 경로가 이 PC에 없어 기본 위치를 쓰기로 한 경우에만 그 값으로 바꾼다.
+        vs_path도 이관 원본의 경로에 파일이 없고 기본 위치(저장소 루트)에 있으면 기본 위치로 바꾼다(다른 PC에서 만든 통합문서 이관)."""
         base = settings_rows(self.cfg_path, self.sample)
         base_keys = [k for k, *_ in base]
         if self.plan is None:
@@ -780,8 +781,13 @@ class Builder:
             if k in src:
                 val = src[k][1]
                 if k == "cfg_path" and self.cfg_explicit and val != self.cfg_path:
-                    self.say(f"설정 cfg_path: --cfg로 준 경로를 씀(이관 값 대신): {self.cfg_path}")
+                    self.say(f"설정 cfg_path: 이관 값 대신 이 경로를 씀: {self.cfg_path}")
                     val = self.cfg_path
+                if k == "vs_path" and not migrate.is_blank(val):
+                    p = str(val).strip().strip('"')
+                    if not os.path.exists(p) and os.path.exists(v):
+                        self.say(f"설정 vs_path: 이관 원본의 경로({p})가 이 PC에 없어 기본 위치를 씀: {v}")
+                        val = v
                 out.append((k, label, val, desc))
                 kept.append(k)
             else:
@@ -2615,6 +2621,11 @@ def run_build(a) -> int:
     elif plan is not None:
         v = next((s[2] for s in plan.settings if s[0] == "cfg_path"), None)
         cfg = str(v).strip().strip('"') if not migrate.is_blank(v) else DEFAULT_CFG
+        # 다른 PC에서 만든 통합문서를 이관하면 원본의 경로가 이 PC에 없을 수 있다 → 기본 위치에 파일이 있으면 그것을 쓰고 설정도 바꿈
+        if not os.path.exists(cfg) and os.path.exists(DEFAULT_CFG):
+            say(f"설정 cfg_path: 이관 원본의 경로가 이 PC에 없어 기본 위치를 씀: {DEFAULT_CFG}")
+            cfg = DEFAULT_CFG
+            cfg_explicit = True
     else:
         cfg = DEFAULT_CFG
     if not os.path.exists(cfg):

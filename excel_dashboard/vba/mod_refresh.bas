@@ -88,13 +88,19 @@
 ' 이름 정의: 시세_최근조회·시세_상태, 전체_최근조회·전체_상태, 업종_최근조회·업종_상태, 분석_최근조회·분석_상태
 '   (쓰기), 분석코드(읽기: 요약 제목에 종목코드 표시). 통합문서 범위 이름을 우선 찾고, 없으면 시트 범위
 '   이름도 찾는다. 이름이 없으면 오류 없이 요약에 경고 줄만 남긴다.
-' 그 밖의 표: tblSettings(키, 값: force_weekly), tblToken(env, token, expires, status), tblEstSnap.
+' 그 밖의 표: tblSettings(키, 값: force_weekly, cfg_path, vs_path), tblToken(env, token, expires, status), tblEstSnap.
+'
+' 다른 PC로 옮긴 통합문서: Auto_Open(사용자가 통합문서를 열 때 Excel이 부름 - COM 자동화로 열 때는 불리지 않음)과
+'   모든 버튼의 시작에서 FixLocalPaths가 [설정] cfg_path·vs_path를 이 PC에 맞춘다. 지금 경로에 파일이 없고 표준 위치
+'   (cfg_path: %USERPROFILE%\KIS\config\kis_devlp.yaml, vs_path: 통합문서 폴더 또는 그 상위 폴더의 수집기업_valuesearch.xlsx)에
+'   파일이 있을 때만 바꾼다. 버튼에서 바꾸면 요약에 [주의] 줄로 알린다.
 '
 ' 불변식: 비동기 쿼리가 모두 끝날 때까지 기다리는 Application 메서드(CalculateUntil...)는 쓰지 않는다
 '   (통합문서 표를 읽는 쿼리와 교착됨). 표별 동기 새로 고침과 QueryTable.Refreshing 확인만 쓴다.
 ' 참조 추가 없음: ADODB.Stream, Scripting.FileSystemObject, Scripting.Dictionary는 CreateObject로 쓴다.
 ' 시험용 공개 함수: JudgeTable(표 이름), SaveEstSnapCsv() - "판정|건수|사유" 문자열을 돌려준다.
 '   RefreshedTables() - 이 Excel 세션에서 새로 고친 표 이름(소문자, 쉼표로 이음) - 예열 동작 확인용.
+'   FixLocalPaths() - 바꾼 설정 경로("키 -> 경로" 줄들, 없으면 빈 문자열).
 '==================================================================================================
 Option Explicit
 
@@ -111,6 +117,9 @@ Private Const HISTORY_DIR As String = "history"
 Private Const SNAP_FILE As String = "est_snap.csv"
 ' 기존 CSV를 덮지 않을 때 새 내용을 따로 저장하는 파일 이름 앞부분(뒤에 yyyymmdd_hhnnss.csv) - 머리 주석 4번
 Private Const SNAP_ALT_PREFIX As String = "est_snap_"
+' 다른 PC 경로 맞추기(FixLocalPaths)의 표준 위치
+Private Const CFG_REL_PATH As String = "\KIS\config\kis_devlp.yaml"
+Private Const VS_FILE As String = "수집기업_valuesearch.xlsx"
 Private Const TOKEN_MIN_MINUTES As Long = 5
 Private Const WAIT_BUSY_SECONDS As Long = 120
 Private Const REASON_MAX As Long = 200
@@ -166,6 +175,12 @@ Public Sub RunAnalysis()
     End If
 End Sub
 
+' 사용자가 통합문서를 열 때(매크로를 허용한 뒤) Excel이 부른다. COM 자동화로 열 때는 불리지 않는다.
+Public Sub Auto_Open()
+    On Error Resume Next
+    FixLocalPaths
+End Sub
+
 '--------------------------------------------------------------------------------------------------
 ' 시험·점검용 공개 함수 ("판정|건수|사유")
 '--------------------------------------------------------------------------------------------------
@@ -196,6 +211,59 @@ Public Function SaveEstSnapCsv() As String
     SaveEstSnapCsv = VerdictName(verdict) & "|" & cnt & "|" & reason
 End Function
 
+' [설정]의 cfg_path·vs_path가 이 PC에 없는 파일을 가리키면, 표준 위치에 파일이 있을 때만 그 경로로 바꾼다
+' (다른 PC에서 만들거나 옮겨 온 통합문서). 지금 경로에 파일이 있거나 후보에도 없으면 그대로 둔다.
+' 반환: 바꾼 키와 새 경로(줄마다 "키 -> 경로"), 바꾼 것이 없으면 빈 문자열. 오류는 삼킨다(버튼 실행을 막지 않음).
+Public Function FixLocalPaths() As String
+    Dim fso As Object
+    Dim msg As String
+    Dim home As String
+    Dim wbDir As String
+    Dim upDir As String
+    Dim cfgCands As Variant
+    Dim vsCands As Variant
+    On Error GoTo Done
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    home = Environ$("USERPROFILE")
+    wbDir = ThisWorkbook.Path
+    If Len(wbDir) > 0 Then upDir = fso.GetParentFolderName(wbDir)
+    If Len(home) > 0 Then cfgCands = Array(home & CFG_REL_PATH) Else cfgCands = Array()
+    If Len(wbDir) = 0 Then
+        vsCands = Array()
+    ElseIf Len(upDir) = 0 Then
+        vsCands = Array(fso.BuildPath(wbDir, VS_FILE))
+    Else
+        vsCands = Array(fso.BuildPath(wbDir, VS_FILE), fso.BuildPath(upDir, VS_FILE))
+    End If
+    msg = FixOnePath(fso, "cfg_path", cfgCands)
+    msg = msg & FixOnePath(fso, "vs_path", vsCands)
+Done:
+    FixLocalPaths = msg
+End Function
+
+' FixLocalPaths 도우미: 키 하나. 바꿨으면 "키 -> 경로" & 줄바꿈, 아니면 빈 문자열.
+Private Function FixOnePath(ByVal fso As Object, ByVal key As String, ByVal candidates As Variant) As String
+    Dim cur As String
+    Dim c As Variant
+    Dim why As String
+    On Error GoTo Done
+    cur = Trim$(CellText(GetKeyValue("tblSettings", key)))
+    If Len(cur) > 0 Then
+        If fso.FileExists(cur) Then Exit Function
+    End If
+    For Each c In candidates
+        If Len(CStr(c)) > 0 Then
+            If fso.FileExists(CStr(c)) Then
+                If SetKeyValue("tblSettings", key, CStr(c), False, why) Then
+                    FixOnePath = key & " -> " & CStr(c) & vbLf
+                End If
+                Exit Function
+            End If
+        End If
+    Next c
+Done:
+End Function
+
 Public Function RefreshedTables() As String
     If m_refreshed Is Nothing Then Exit Function
     If m_refreshed.Count = 0 Then Exit Function
@@ -224,6 +292,7 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
     Dim why As String
     Dim overall As String
     Dim fullText As String
+    Dim fixed As String
 
     If m_running Then
         Beep
@@ -248,6 +317,10 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
     Application.ScreenUpdating = False
     Application.EnableEvents = False
     Application.DisplayAlerts = False
+    ' 다른 PC로 옮긴 통합문서면 설정 경로를 이 PC에 맞춘다(머리 주석 '다른 PC로 옮긴 통합문서')
+    fixed = FixLocalPaths()
+    If Right$(fixed, 1) = vbLf Then fixed = Left$(fixed, Len(fixed) - 1)
+    If Len(fixed) > 0 Then AddNote "이 PC에 맞게 설정 경로를 바꿈: " & Replace(fixed, vbLf, " / ")
     Application.Cursor = xlWait
     Application.StatusBar = title & " 준비 중" & Ellipsis()
 
