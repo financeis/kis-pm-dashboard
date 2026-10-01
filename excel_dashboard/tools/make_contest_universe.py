@@ -203,7 +203,7 @@ def eok_to_won(text: str) -> int:
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="대회 종목군 고정 명단 생성 (spec R1, 조회 전용)")
+    ap = argparse.ArgumentParser(description="대회 종목군 고정 명단 생성 (조회 전용)")
     ap.add_argument("--base-date", type=parse_ymd, default=DEFAULT_BASE_DATE,
                     help="시가총액 기준일 = 세션 목록의 마지막 날 (기본 %(default)s)")
     ap.add_argument("--sessions", default=DEFAULT_SESSIONS,

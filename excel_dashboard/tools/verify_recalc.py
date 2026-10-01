@@ -631,17 +631,17 @@ def main() -> int:
         cur = pm.get("현재가")
         mcap = cur * shares / 1e8 if cur and shares else None
         for f in ["가격기준일", "현재가", "1D", "1W", "1M", "3M", "6M", "YTD", "1Y"] + STRIP + ["거래대금60일억", "거래량60일천주", "고52주대비"]:
-            rep.add("가격(R5)", code, f, pm.get(f), w.get(f))
-        rep.add("가격(R5)", code, "시가총액억", mcap, w.get("시가총액억"), rel=5e-3, note="상장주식수: lstn_stcn vs 종목 마스터")
+            rep.add("가격", code, f, pm.get(f), w.get(f))
+        rep.add("가격", code, "시가총액억", mcap, w.get("시가총액억"), rel=5e-3, note="상장주식수: lstn_stcn vs 종목 마스터")
 
         fl = flow_metrics(src.investor(code, today), today, now)
         wcap = num(w.get("시가총액억"))
         for f in ["수급기준일", "외국인1D억", "외국인1W억", "외국인1M억", "기관1D억", "기관1W억", "기관1M억"]:
-            rep.add("수급(R6)", code, f, fl.get(f), w.get(f))
+            rep.add("수급", code, f, fl.get(f), w.get(f))
         for col in ("외국인", "기관"):
             for lab in ("1D", "1W", "1M"):
                 v = fl.get(f"{col}{lab}억")
-                rep.add("수급(R6)", code, f"{col}{lab}%", v / mcap if v is not None and mcap else None, w.get(f"{col}{lab}%"),
+                rep.add("수급", code, f"{col}{lab}%", v / mcap if v is not None and mcap else None, w.get(f"{col}{lab}%"),
                         rel=5e-3, note="분모 = 시가총액(상장주식수 출처 차이 허용)")
 
         inc, rat = src.fin(code)
@@ -652,8 +652,8 @@ def main() -> int:
         ttm0, bps0 = ttm_eps(q, today), bps_at(q, today)
         per = cur / ttm_l if cur and ttm_l and ttm_l > 0 else None
         pbr = cur / bps_l if cur and bps_l and bps_l > 0 else None
-        rep.add("실적·밸류(R7)", code, "후행PER", per, w.get("후행PER"))
-        rep.add("실적·밸류(R7)", code, "PBR", pbr, w.get("PBR"))
+        rep.add("실적·밸류", code, "후행PER", per, w.get("후행PER"))
+        rep.add("실적·밸류", code, "PBR", pbr, w.get("PBR"))
         pos = {d: i for i, d in enumerate(cal)}
         p0 = pos.get(pdate)
         prev_year = [i for i, d in enumerate(cal) if d.year < pdate.year]
@@ -666,51 +666,51 @@ def main() -> int:
             te, bb = (ttm_eps(q, bd), bps_at(q, bd)) if bd else (None, None)
             pv = ((cur / ttm0) / (bc / te) - 1) if (cur and ttm0 and ttm0 > 0 and bc and te and te > 0) else None
             bv = ((cur / bps0) / (bc / bb) - 1) if (cur and bps0 and bps0 > 0 and bc and bb and bb > 0) else None
-            rep.add("실적·밸류(R7)", code, f"PER변화{k}", pv, w.get(f"PER변화{k}"), note=f"기준 {bd}")
-            rep.add("실적·밸류(R7)", code, f"PBR변화{k}", bv, w.get(f"PBR변화{k}"), note=f"기준 {bd}")
+            rep.add("실적·밸류", code, f"PER변화{k}", pv, w.get(f"PER변화{k}"), note=f"기준 {bd}")
+            rep.add("실적·밸류", code, f"PBR변화{k}", bv, w.get(f"PBR변화{k}"), note=f"기준 {bd}")
         filled = sorted(k for k, r in q.items() if any(r.get(f) is not None for f in ("sales", "op", "ni", "eps", "bps", "roe")))
         if filled:
             k0 = filled[-1]
             r0 = q[k0]
             ly = q.get(shift_ym(k0, -12), {})
             label = f"{k0[:4]}.Q{r0['fqn']}" if r0.get("fqn") else f"{k0[:4]}.{k0[4:]}"
-            rep.add("실적·밸류(R7)", code, "최근분기", label, w.get("최근분기"))
+            rep.add("실적·밸류", code, "최근분기", label, w.get("최근분기"))
             for f, col in (("sales", "매출YoY"), ("op", "영업이익YoY"), ("ni", "순이익YoY")):
                 a1, a0 = r0.get(f + "_q"), ly.get(f + "_q")
-                rep.add("실적·밸류(R7)", code, col, (a1 / a0 - 1) if a1 is not None and a0 is not None and a0 > 0 else None, w.get(col))
+                rep.add("실적·밸류", code, col, (a1 / a0 - 1) if a1 is not None and a0 is not None and a0 > 0 else None, w.get(col))
             a1, a0 = r0.get("op_q"), ly.get("op_q")
             st = None
             if a1 is not None and a0 is not None:
                 st = "흑자전환" if a0 <= 0 < a1 else "적자전환" if a0 > 0 >= a1 else "적자지속" if a1 <= 0 else "흑자지속"
-            rep.add("실적·밸류(R7)", code, "실적상태", st, w.get("실적상태"))
-            rep.add("실적·밸류(R7)", code, "ROE", r0.get("roe") / 100 if r0.get("roe") is not None else None, w.get("ROE"))
+            rep.add("실적·밸류", code, "실적상태", st, w.get("실적상태"))
+            rep.add("실적·밸류", code, "ROE", r0.get("roe") / 100 if r0.get("roe") is not None else None, w.get("ROE"))
 
         D = today
         ops = src.opinions(code, add_months(add_months(D, -3), -TARGET_MONTHS), D)
         avg0, n0 = consensus(ops, D)
         avg1, _ = consensus(ops, add_months(D, -1))
         avg3, _ = consensus(ops, add_months(D, -3))
-        rep.add("목표주가(R8)", code, "목표가평균", avg0, w.get("목표가평균"))
-        rep.add("목표주가(R8)", code, "증권사수", n0, w.get("증권사수"))
-        rep.add("목표주가(R8)", code, "괴리율", ratio(avg0, cur), w.get("괴리율"))
-        rep.add("목표주가(R8)", code, "목표가변화1M", ratio(avg0, avg1) if avg1 and avg1 > 0 else None, w.get("목표가변화1M"))
-        rep.add("목표주가(R8)", code, "목표가변화3M", ratio(avg0, avg3) if avg3 and avg3 > 0 else None, w.get("목표가변화3M"))
+        rep.add("목표주가", code, "목표가평균", avg0, w.get("목표가평균"))
+        rep.add("목표주가", code, "증권사수", n0, w.get("증권사수"))
+        rep.add("목표주가", code, "괴리율", ratio(avg0, cur), w.get("괴리율"))
+        rep.add("목표주가", code, "목표가변화1M", ratio(avg0, avg1) if avg1 and avg1 > 0 else None, w.get("목표가변화1M"))
+        rep.add("목표주가", code, "목표가변화3M", ratio(avg0, avg3) if avg3 and avg3 > 0 else None, w.get("목표가변화3M"))
         top = sorted([(ymd(r["stck_bsop_date"]), -i, r) for i, r in enumerate(ops)], key=lambda x: (x[0], x[1]), reverse=True)
         if top:
             r = top[0][2]
-            rep.add("목표주가(R8)", code, "최근의견일", ymd(r["stck_bsop_date"]), w.get("최근의견일"))
-            rep.add("목표주가(R8)", code, "최근증권사", str(r.get("mbcr_name") or "").strip() or None, w.get("최근증권사"))
-            rep.add("목표주가(R8)", code, "최근의견", str(r.get("invt_opnn") or "").strip() or None, w.get("최근의견"))
+            rep.add("목표주가", code, "최근의견일", ymd(r["stck_bsop_date"]), w.get("최근의견일"))
+            rep.add("목표주가", code, "최근증권사", str(r.get("mbcr_name") or "").strip() or None, w.get("최근증권사"))
+            rep.add("목표주가", code, "최근의견", str(r.get("invt_opnn") or "").strip() or None, w.get("최근의견"))
 
         e = est_parse(src.estimate(code), today)
         fe = fwd_eps(e["FY1"], e["FY1_EPS"], e["FY2_EPS"], today)
         fper = cur / fe if cur and fe and fe > 0 else None
         for f in ("추정일", "FY1", "FY1_EPS", "FY2_EPS"):
-            rep.add("KIS 추정(R9)", code, f, e[f], w.get(f))
-        rep.add("KIS 추정(R9)", code, "FY2", e["FY2"] if e["FY2_EPS"] is not None else ("FY1만" if e["FY1_EPS"] is not None else None),
+            rep.add("KIS 추정", code, f, e[f], w.get(f))
+        rep.add("KIS 추정", code, "FY2", e["FY2"] if e["FY2_EPS"] is not None else ("FY1만" if e["FY1_EPS"] is not None else None),
                 w.get("FY2"))
-        rep.add("KIS 추정(R9)", code, "FwdEPS", fe, w.get("FwdEPS"))
-        rep.add("KIS 추정(R9)", code, "FwdPER", fper, w.get("FwdPER"))
+        rep.add("KIS 추정", code, "FwdEPS", fe, w.get("FwdEPS"))
+        rep.add("KIS 추정", code, "FwdPER", fper, w.get("FwdPER"))
         for lab, n in (("1W", 5), ("1M", 21)):
             bp = p0 - n if p0 is not None else None
             bd = cal[bp] if bp is not None and bp >= 0 else None
@@ -729,11 +729,11 @@ def main() -> int:
                     base = bc / bfe if bc and bfe and bfe > 0 else None
                     how = f"재구성 {bd}"
             v = fper / base - 1 if fper and base and base > 0 else None
-            rep.add("KIS 추정(R9)", code, f"FwdPER변화{lab}", v, w.get(f"FwdPER변화{lab}"), note=how)
+            rep.add("KIS 추정", code, f"FwdPER변화{lab}", v, w.get(f"FwdPER변화{lab}"), note=how)
 
         cm = csl_metrics(*src.csl(code), today)
         for f in ("신용잔고율", "신용잔고율1M변화", "공매도비중5일", "대차잔고1M변화율", "신용기준일"):
-            rep.add("신용·공매도·대차(R10)", code, f, cm.get(f), w.get(f))
+            rep.add("신용·공매도·대차", code, f, cm.get(f), w.get(f))
 
     # KRX 업종
     sec_rows = {r["코드"]: r for r in T["tblSectorKRX"] if r.get("코드")}
@@ -741,11 +741,11 @@ def main() -> int:
     for sc in sectors:
         w = sec_rows.get(sc)
         if not w:
-            rep.add("KRX 업종(R14)", sc, "tblSectorKRX 행", "있음", None)
+            rep.add("KRX 업종", sc, "tblSectorKRX 행", "있음", None)
             continue
         m = sector_metrics(src.sector(sc, "KSQ" if w.get("시장") == "KOSDAQ" else "KSP"), today, now)
         for f in ["기준일", "지수", "1D", "1W", "1M", "3M", "6M", "YTD", "1Y"] + [f"{c}{p}억" for c in ("외국인", "기관", "개인") for p in ("1D", "1W", "1M")]:
-            rep.add("KRX 업종(R14)", f"{sc} {w.get('업종명')}", f, m.get(f), w.get(f))
+            rep.add("KRX 업종", f"{sc} {w.get('업종명')}", f, m.get(f), w.get(f))
 
     # 테마 집계 — 통합문서 tblCompany 대회 행으로 다시 계산
     rows = [r for r in T["tblCompany"] if r.get("유니버스") == "대회" and r.get("대테마")]
@@ -769,25 +769,25 @@ def main() -> int:
         w = agg.get((lvl, t, s))
         key = f"{t}" + (f" / {s}" if s else "")
         if not w:
-            rep.add("테마(R15)", key, "tblThemeAgg 행", "있음", None)
+            rep.add("테마", key, "tblThemeAgg 행", "있음", None)
             continue
-        rep.add("테마(R15)", key, "종목수", len(members), w.get("종목수"))
+        rep.add("테마", key, "종목수", len(members), w.get("종목수"))
         capv = [num(r.get("시가총액억")) for r in members if num(r.get("시가총액억")) is not None]
-        rep.add("테마(R15)", key, "시가총액억", sum(capv) if capv else None, w.get("시가총액억"))
+        rep.add("테마", key, "시가총액억", sum(capv) if capv else None, w.get("시가총액억"))
         for p in ["1D", "1W", "1M", "3M", "6M", "YTD", "1Y"]:
             pairs = [(num(r.get("시가총액억")), num(r.get(p))) for r in members]
             pairs = [(c, x) for c, x in pairs if c is not None and x is not None]
             tot = sum(c for c, _ in pairs)
-            rep.add("테마(R15)", key, p, sum(c * x for c, x in pairs) / tot if pairs and tot else None, w.get(p))
+            rep.add("테마", key, p, sum(c * x for c, x in pairs) / tot if pairs and tot else None, w.get(p))
         for p in ("1D", "1W"):
             xs = [num(r.get(p)) for r in members if num(r.get(p)) is not None]
-            rep.add("테마(R15)", key, f"상승비율{p}", (sum(1 for x in xs if x > 0) / len(xs)) if xs else None, w.get(f"상승비율{p}"))
+            rep.add("테마", key, f"상승비율{p}", (sum(1 for x in xs if x > 0) / len(xs)) if xs else None, w.get(f"상승비율{p}"))
         for col in ("외국인", "기관"):
             for p in ("1D", "1W", "1M"):
                 pairs = [(num(r.get("시가총액억")), num(r.get(f"{col}{p}억"))) for r in members]
                 pairs = [(c, x) for c, x in pairs if c is not None and x is not None]
                 tot = sum(c for c, _ in pairs)
-                rep.add("테마(R15)", key, f"{col}{p}%", sum(x for _, x in pairs) / tot if pairs and tot else None, w.get(f"{col}{p}%"))
+                rep.add("테마", key, f"{col}{p}%", sum(x for _, x in pairs) / tot if pairs and tot else None, w.get(f"{col}{p}%"))
 
     summ = rep.summary()
     bad = [r for r in rep.rows if not r["ok"]]

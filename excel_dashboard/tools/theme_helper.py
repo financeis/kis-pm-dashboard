@@ -309,7 +309,7 @@ def extract(out_dir: str, contest_path: str, vs_path: str, theme_zip: Optional[s
 
 # ---------------------------------------------------------------- 인자·진입점
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="대회 종목 기본 테마표(themes_base.csv) 검증·참고 목록 추출 (spec R3)")
+    ap = argparse.ArgumentParser(description="대회 종목 기본 테마표(themes_base.csv) 검증·참고 목록 추출")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check", help="기본 테마표 검증 (오류 시 종료 코드 1)")
     c.add_argument("--themes", default=DEFAULT_THEMES, help="기본 테마표 경로 (기본 %(default)s)")
