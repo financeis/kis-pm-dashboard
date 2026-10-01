@@ -66,9 +66,38 @@ QUERY_DESC = {
 # ---------------------------------------------------------------------------------------------------------------
 # 입력표 기본값
 # ---------------------------------------------------------------------------------------------------------------
+VS_FILE_NAME = "수집기업_valuesearch.xlsx"   # NICS 분류 원천(VALUESearch 내보내기). 저장소 루트에 두며 git에는 넣지 않음
+
+
+def default_vs_path() -> str:
+    """설정 vs_path 기본값: 이 체크아웃이 속한 **주 저장소** 루트의 수집기업_valuesearch.xlsx 절대 경로 (spec R2).
+
+    git 워크트리에서 빌드해도 사용자 파일이 있는 주 저장소를 가리키도록 `git rev-parse --git-common-dir`
+    (주 저장소의 .git 폴더)의 상위 폴더를 쓴다. git이 없거나 실패하면 이 체크아웃의 루트(excel_dashboard의
+    상위 폴더)로 대신한다. 파일이 있는지는 확인하지 않는다(없으면 T_Class가 상태에 사유를 남기고 직전 분류 유지).
+
+    Returns:
+        str: 예) C:\\Users\\me\\open-trading-api\\수집기업_valuesearch.xlsx
+    """
+    root = os.path.dirname(HERE)
+    try:
+        import subprocess
+        r = subprocess.run(["git", "-C", HERE, "rev-parse", "--git-common-dir"], capture_output=True, text=True,
+                           encoding="utf-8", timeout=10)
+        common = (r.stdout or "").strip()
+        if r.returncode == 0 and common and not common.startswith('"'):
+            common = os.path.normpath(common if os.path.isabs(common) else os.path.join(HERE, common))
+            if os.path.basename(common).lower() == ".git":
+                root = os.path.dirname(common)
+    except Exception:  # noqa: BLE001 — git이 없어도 빌드는 계속(체크아웃 루트로 대신)
+        pass
+    return os.path.join(root, VS_FILE_NAME)
+
+
 def settings_rows(cfg_path: str, sample: bool):
     start = dt.date(2026, 9, 1) if sample else dt.date.today()
     end = dt.date(2026, 10, 30) if sample else dt.date.today() + dt.timedelta(days=61)
+    # 새 키(spec §5·R2, 2026-10-01 T22)는 맨 뒤에 붙인다 — build_inputs의 검증 목록이 행 위치(5·18·19행)로 걸려 있음
     return [
         ("cfg_path", "KIS 설정파일 경로", cfg_path, "앱키·시크릿을 읽을 kis_devlp.yaml 위치 (키는 통합문서에 저장하지 않음)"),
         ("start_date", "대회 시작일", start, "★ 실제 대회 시작일로 변경 (샘플: 2026-09-01)" if sample else "★ 대회 시작일"),
@@ -89,6 +118,18 @@ def settings_rows(cfg_path: str, sample: bool):
         ("risk_days", "위험 계산 기간(일)", 60, "변동성·베타·VaR 계산 구간"),
         ("rank_market", "순위 시장", "전체", "전체 / 코스피 / 코스닥"),
         ("stock_flow", "종목별 수급 조회", "Y", "Y: 종목당 1회 추가 호출(외국인·기관 5/20일 순매수)"),
+        ("vs_path", "VALUESearch 파일 경로", default_vs_path(),
+         "NICS 업종 분류 원천(수집기업_valuesearch.xlsx, 시트 Sheet2). 기본값 = 빌드할 때 저장소 루트의 이 파일"),
+        ("sector_basis", "섹터 기준", "세부",
+         "대분류 / 업종 / 세부 / 대테마 — 포트폴리오·리스크·시세판·순위의 '섹터' (값이 없으면 세부→업종→대분류→KRX)"),
+        ("weekly_days", "주간 항목 주기(일)", 7, "분기 실적·신용/공매도/대차·목표주가·추정 전체 조사를 [전체]에서 다시 받는 간격"),
+        ("force_weekly", "주간 항목 강제 갱신", "N", "Y면 다음 [전체]에서 주간 항목을 바로 다시 받고 N으로 되돌림"),
+        ("target_window_months", "목표주가 기간(개월)", 6, "증권사별 최근 N개월 안의 마지막 목표가로 컨센서스 계산"),
+        ("profile_days", "매물대 기간(세션)", 60, "종목분석 N일 매물대 계산 구간"),
+        ("event_days_ahead", "이벤트 기간(앞, 일)", 60, "오늘부터 며칠 뒤까지의 기업 이벤트를 받을지"),
+        ("event_days_back", "이벤트 기간(뒤, 일)", 7, "며칠 전까지의 지난 이벤트도 보여 줄지"),
+        ("fin_lag_q", "분기 실적 공시 지연(일)", 45, "1~3분기 실적을 분기말 + N일부터 '알려진 값'으로 봄(후행 PER·PBR 변화)"),
+        ("fin_lag_y", "연간 실적 공시 지연(일)", 90, "4분기(연간) 실적을 결산일 + N일부터 '알려진 값'으로 봄"),
     ]
 
 
@@ -133,8 +174,42 @@ F_TRADE_NAME = ('=IF([@종목코드]="","",IFERROR(XLOOKUP(' + F_TRADE_CODE +
 F_TRADE_AMT = '=IF(AND(ISNUMBER([@수량]),ISNUMBER([@단가])),[@수량]*[@단가],"")'
 F_WATCH_NAME = ('=IF([@종목코드]="","",IFERROR(XLOOKUP(' + F_TRADE_CODE +
                 ',tblUniverse[종목코드],tblUniverse[종목명]),"⚠ 코드 확인"))')
+# 대회편입 = 대회 종목 여부(명단 ± 수정표, T_Universe가 fnClassify로 채움) → 종목DB에 있지만 대회 종목이 아니면 경고
 F_TRADE_CHK = ('=IF([@종목코드]="","",LET(e,XLOOKUP(' + F_TRADE_CODE + ',tblUniverse[종목코드],tblUniverse[대회편입],"X"),'
-               'IF(e="X","⚠ 종목DB에 없는 코드",IF(e="N","⚠ 거래정지·SPAC 등",IF(OR([@구분]="매수",[@구분]="매도"),"✓","⚠ 구분 확인")))))')
+               'IF(e="X","⚠ 종목DB에 없는 코드",IF(e="N","⚠ 대회 종목 아님",IF(OR([@구분]="매수",[@구분]="매도"),"✓","⚠ 구분 확인")))))')
+
+# [설정] 시트 배치 — 기본 설정 표(B6, 29행 → B6:E35) 아래로 기존 안내 문구를 옮기고, ⑤ 수정표(spec R4)는 ④ 휴장일 오른쪽의
+# 빈 열 묶음(W:AD)에 둔다. 다른 입력표(B:E·G:L·N:R·T:U) 아래에 두면 그 표의 행 삭제·삽입이 "표의 셀이 이동될 수 있어
+# 수행되지 않습니다"로 막힌다(Excel은 아래쪽 표 일부만 미는 이동을 거부 — 하네스에서 관심종목 행 삭제로 확인).
+SETTINGS_NOTE_ROW = 37            # 기존 B28·B29 안내 문구가 옮겨 오는 첫 행(설정표와 겹치지 않게), 그 다음 행은 ⑤로 가는 링크
+OVERRIDE_TITLE_CELL = "W5"        # ⑤ 수정표 제목(①~④ 제목과 같은 5행), W6·W7은 사용법 안내
+OVERRIDE_WARN_CELL = "AB5"        # 무시된 수정표 행 경고 칸(F_OVERRIDE_WARN) — 수정표 바로 위 제목 줄 오른쪽
+OVERRIDE_ANCHOR = "W8"            # tblOverride 머리글 왼쪽 위 칸(build_inputs가 빈 표로 만듦, 사용자 행 이관은 T23)
+OVERRIDE_HEADERS = ["종목코드", "대회편입", "대테마", "세부테마", "NICS 대분류", "NICS 업종", "NICS 세부", "메모"]
+OVERRIDE_WIDTHS = [10, 9, 12, 14, 12, 14, 16, 24]   # W:AD 열 너비 (V열은 3폭 여백)
+# 수정표에서 무시되는 행 수 경고: fnClassify와 같은 정규화(앞뒤 공백 제거·대문자·숫자만 6자리 미만이면 앞 0 채움) 뒤
+#  ① 종목코드가 6자리 [0-9A-Z]가 아님(빈 코드 포함) ② 대회편입이 공란·추가·제외가 아님 ③ 종목DB(tblUniverse)에 없는 코드
+#  중 하나인 행을 센다. 메모만 있는 행·완전히 빈 행은 세지 않는다. 없으면 빈칸.
+F_OVERRIDE_WARN = (
+    '=LET(x_cln,LAMBDA(v_x,IFERROR(TRIM(CLEAN(SUBSTITUTE(SUBSTITUTE(v_x&"",CHAR(160)," "),UNICHAR(12288)," "))),"")),'
+    'x_has,LAMBDA(s_x,k_x,IF(LEN(s_x)=0,FALSE,AND(ISNUMBER(FIND(MID(s_x,SEQUENCE(LEN(s_x)),1),k_x))))),'
+    'x_bad,MAP(tblOverride[종목코드],tblOverride[대회편입],tblOverride[대테마],tblOverride[세부테마],'
+    'tblOverride[NICS 대분류],tblOverride[NICS 업종],tblOverride[NICS 세부],'
+    'LAMBDA(a_1,a_2,a_3,a_4,a_5,a_6,a_7,LET(s_0,UPPER(x_cln(a_1)),'
+    's_1,IF(AND(LEN(s_0)<6,x_has(s_0,"0123456789")),RIGHT("000000"&s_0,6),s_0),'
+    'm_0,x_cln(a_2),n_e,LEN(s_0&m_0&x_cln(a_3)&x_cln(a_4)&x_cln(a_5)&x_cln(a_6)&x_cln(a_7))>0,'
+    'v_c,AND(LEN(s_1)=6,x_has(s_1,"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")),'
+    'v_m,OR(m_0="",m_0="추가",m_0="제외"),'
+    'i_u,IF(v_c,ISNUMBER(XMATCH(s_1,tblUniverse[종목코드])),FALSE),'
+    'AND(n_e,NOT(AND(v_c,v_m,i_u)))))),'
+    'x_n,SUM(--x_bad),IF(x_n=0,"","⚠ 수정표 "&x_n&"행 무시됨(종목코드·값 확인)"))'
+)
+
+# 순위 블록([시장]·[대시보드]) — tblRank[대회] = ★/공란. 빈 칸이 0으로 보이지 않게 ★만 골라 씀
+RANK_STAR = 'IF(tblRank[대회]="★","★","")'
+NONCONTEST_GREY = "#9AA2AD"       # 대회 밖 종목 글꼴(보유·관심 파란 굵은 글씨 규칙이 우선)
+MKT_RANK_TOP = 60                 # [시장] 순위 6블록 시작 행 (2열 × 3행, 블록당 12열)
+MKT_FUNDS_TOP = 116               # [시장] 증시 자금 동향 구역 시작 행 (spec R13)
 
 
 def sample_trades():
@@ -374,6 +449,18 @@ class Builder:
                          style_name=self.table_style)
         self.lo["tblHolidays"] = lo
 
+        # ⑤ 수정표 tblOverride(spec R4): 빈 표(머리글 + 빈 행 1개, 종목코드는 텍스트), ④ 오른쪽의 빈 열 묶음 W:AD.
+        # 제목·사용법·경고 칸은 build_settings_sheet, 기존 통합문서의 수정표 이관은 T23
+        anchor = ws.Range(OVERRIDE_ANCHOR)
+        ws.Columns(anchor.Column - 1).ColumnWidth = 3
+        for j, w in enumerate(OVERRIDE_WIDTHS):
+            ws.Columns(anchor.Column + j).ColumnWidth = w
+        lo = write_table(ws, anchor.Row, anchor.Column, OVERRIDE_HEADERS, [], "tblOverride", text_cols=("종목코드",),
+                         style_name=self.table_style)
+        fill(lo.DataBodyRange, "input")
+        validation_list(lo.ListColumns("대회편입").DataBodyRange, "추가,제외")
+        self.lo["tblOverride"] = lo
+
         # 매매일지
         ws = self.ws["매매일지"]
         sheet_setup(ws, bg=False, zoom=90, tab="#E8890C",
@@ -392,7 +479,7 @@ class Builder:
             style(lo.ListColumns(c).DataBodyRange, color=C["muted"])
             lo.ListColumns(c).Range.Cells(1, 1).Interior.Color = rgb("#8A94A3")
         self.lo["tblTrades"] = lo
-        self.say("입력표 생성 완료 (설정·관심종목·해외지표·휴장일·매매일지)")
+        self.say("입력표 생성 완료 (설정·관심종목·해외지표·휴장일·수정표·매매일지)")
 
     # -------------------------------------------------------------------------------------------------------
     def add_queries(self):
@@ -764,19 +851,21 @@ class Builder:
         style_axes(ch, y_nf="0.0%", x_nf="mm/dd", legend=None)
 
         ws.Rows(48).RowHeight = 8
-        # 시장 주도주 3종
+        # 시장 주도주 3종 — 시장 전체 개별종목(spec R19). 종목명 옆 칸 ★ = 대회 종목, 대회 밖은 회색 글꼴,
+        # 보유·관심 파란 굵은 글씨가 회색보다 우선(규칙 우선순위 맨 앞). 종목명 칸 값은 그대로(보유·관심 강조가 이름으로 찾음)
         blocks = [("B", "거래대금 상위", "거래대금상위", "tblRank[거래대금억]", NF["eok"], "거래대금"),
                   ("J", "외국인 순매수 상위", "외국인순매수", "tblRank[지표]", NF["eok_pl"], "순매수"),
                   ("R", "상승률 상위 (ETF·SPAC 제외)", "상승률상위", "tblRank[거래대금억]", NF["eok"], "거래대금")]
         for col, title, lst, extra, nf_extra, extra_h in blocks:
             c0 = ws.Range(f"{col}49").Column
             section(ws, ws.Range(ws.Cells(49, c0), ws.Cells(49, c0 + 7)).Address, title)
-            for off, h in ((0, "#"), (1, "종목"), (4, "현재가"), (5, "등락률"), (6, extra_h)):
-                put(ws, ws.Cells(50, c0 + off).Address, h, bold=True, size=8, color=C["muted"])
+            for off, head in ((0, "#"), (1, "종목"), (3, "대회"), (4, "현재가"), (5, "등락률"), (6, extra_h)):
+                put(ws, ws.Cells(50, c0 + off).Address, head, bold=True, size=8, color=C["muted"],
+                    h=XL_CENTER if off == 3 else None)
             bottom_line(ws.Range(ws.Cells(50, c0), ws.Cells(50, c0 + 7)))
             cond = f'tblRank[목록]="{lst}"'
-            refs = [(0, "tblRank[순위]", "0"), (1, "tblRank[종목명]", None), (4, "tblRank[현재가]", NF["krw"]),
-                    (5, "tblRank[등락률]", NF["pct_arrow"]), (6, extra, nf_extra)]
+            refs = [(0, "tblRank[순위]", "0"), (1, "tblRank[종목명]", None), (3, RANK_STAR, None),
+                    (4, "tblRank[현재가]", NF["krw"]), (5, "tblRank[등락률]", NF["pct_arrow"]), (6, extra, nf_extra)]
             for off, ref, nf in refs:
                 cell = ws.Cells(51, c0 + off)
                 put(ws, cell.Address, formula=f'=IFERROR(TAKE(FILTER({ref},{cond}),10),"")', size=9)
@@ -784,12 +873,16 @@ class Builder:
                 ws.Range(ws.Cells(51, c0 + off), ws.Cells(60, c0 + off)).Font.Size = 9
             fill(ws.Range(ws.Cells(50, c0), ws.Cells(60, c0 + 7)), "card")
             style(ws.Range(ws.Cells(51, c0), ws.Cells(60, c0)), color=C["muted"], h=XL_CENTER)
-            # 보유·관심 종목 강조
+            style(ws.Range(ws.Cells(51, c0 + 3), ws.Cells(60, c0 + 3)), color=C["gold"], h=XL_CENTER)
+            # 보유·관심 종목 강조(파란 굵은 글씨) → 대회 밖 회색(#·종목·대회 칸) → 파랑을 맨 앞 우선순위로
             first = ws.Cells(51, c0 + 1).Address.replace("$", "")
-            cf_expr(ws.Range(ws.Cells(51, c0 + 1), ws.Cells(60, c0 + 3)),
-                    f'=COUNTIF(tblQuote_종목명,{first})>0', font=C["accent"], bold=True)
-        put(ws, "B62", "※ 파란 굵은 글씨 = 보유·관심 종목 | 상승=빨강·하락=파랑 (국내 관례) | 데이터: 한국투자증권 Open API",
-            size=8, color=C["muted"])
+            blue = cf_expr(ws.Range(ws.Cells(51, c0 + 1), ws.Cells(60, c0 + 3)),
+                           f'=COUNTIF(tblQuote_종목명,{first})>0', font=C["accent"], bold=True)
+            cf_expr(ws.Range(ws.Cells(51, c0), ws.Cells(60, c0 + 3)),
+                    f'=AND(${col_letter(c0 + 1)}51<>"",${col_letter(c0 + 3)}51<>"★")', font=NONCONTEST_GREY)
+            blue.SetFirstPriority()
+        put(ws, "B62", "※ 파란 굵은 글씨 = 보유·관심 종목 | ★ = 대회 종목 · 회색 = 대회 종목 아님 | 상승=빨강·하락=파랑 (국내 관례) | "
+                       "데이터: 한국투자증권 Open API", size=8, color=C["muted"])
         freeze(ws, 4)
         self.say("대시보드 시트 완료")
 
@@ -928,37 +1021,103 @@ class Builder:
         put(ws, "N49", "※ 금리 행의 등락률은 금리 자체의 변화율, 전일대비는 %p", size=8, color=C["muted"])
 
         ws.Rows(59).RowHeight = 8
-        # 주도주 순위 6블록 (2행 × 3)
+        # 주도주 순위 6블록 (2열 × 3행, 블록당 12열) — 시장 전체 개별종목(ETF·ETN·SPAC 제외, spec R19).
+        # 열: # · 종목(이름 칸 + 넘침 칸) · 대회(★) · 섹터(4칸 폭, 설정 섹터 기준 이름이 길어도 보이게) · 현재가 · 등락률 · 지표 · 여백.
+        # 3블록 × 8열로는 ★ 칸을 넣으면 종목명이나 섹터가 한 칸으로 줄어 잘리므로 2열 배치로 바꿨다.
         blocks = [
             ("거래대금상위", "거래대금 상위", "tblRank[거래대금억]", NF["eok"], "거래대금"),
+            ("거래량급증", "거래량 급증", "tblRank[지표]", '0%', "증가율"),
             ("상승률상위", "상승률 상위", "tblRank[거래대금억]", NF["eok"], "거래대금"),
             ("하락률상위", "하락률 상위", "tblRank[거래대금억]", NF["eok"], "거래대금"),
             ("외국인순매수", "외국인 순매수 (가집계)", "tblRank[지표]", NF["eok_pl"], "순매수"),
             ("기관순매수", "기관 순매수 (가집계)", "tblRank[지표]", NF["eok_pl"], "순매수"),
-            ("거래량급증", "거래량 급증", "tblRank[지표]", '0%', "증가율"),
         ]
+        n_rank = 15
         for bi, (lst, title, extra, nf_extra, extra_h) in enumerate(blocks):
-            row0 = 60 if bi < 3 else 78
-            c0 = 2 + (bi % 3) * 8
-            section(ws, ws.Range(ws.Cells(row0, c0), ws.Cells(row0, c0 + 7)).Address, title)
-            for off, h in ((0, "#"), (1, "종목"), (3, "섹터"), (5, "현재가"), (6, "등락률"), (7, extra_h)):
-                put(ws, ws.Cells(row0 + 1, c0 + off).Address, h, bold=True, size=8, color=C["muted"])
-            bottom_line(ws.Range(ws.Cells(row0 + 1, c0), ws.Cells(row0 + 1, c0 + 7)))
-            cond = f'tblRank[목록]="{lst}"'
-            for off, ref, nf in ((0, "tblRank[순위]", "0"), (1, "tblRank[종목명]", None), (3, "tblRank[섹터]", None),
-                                 (5, "tblRank[현재가]", NF["krw"]), (6, "tblRank[등락률]", NF["pct_arrow"]), (7, extra, nf_extra)):
-                put(ws, ws.Cells(row0 + 2, c0 + off).Address, formula=f'=IFERROR(TAKE(FILTER({ref},{cond}),15),"")', size=9)
-                rr = ws.Range(ws.Cells(row0 + 2, c0 + off), ws.Cells(row0 + 16, c0 + off))
+            row0 = MKT_RANK_TOP + (bi // 2) * (n_rank + 3)
+            c0 = 2 + (bi % 2) * 12
+            last = row0 + 1 + n_rank
+            section(ws, ws.Range(ws.Cells(row0, c0), ws.Cells(row0, c0 + 10)).Address, title)
+            cols = ((0, "#", "tblRank[순위]", "0"), (1, "종목", "tblRank[종목명]", None), (3, "대회", RANK_STAR, None),
+                    (4, "섹터", "tblRank[섹터]", None), (8, "현재가", "tblRank[현재가]", NF["krw"]),
+                    (9, "등락률", "tblRank[등락률]", NF["pct_arrow"]), (10, extra_h, extra, nf_extra))
+            for off, head, ref, nf in cols:
+                put(ws, ws.Cells(row0 + 1, c0 + off).Address, head, bold=True, size=8, color=C["muted"],
+                    h=XL_CENTER if off == 3 else None)
+                put(ws, ws.Cells(row0 + 2, c0 + off).Address, formula=f'=IFERROR(TAKE(FILTER({ref},tblRank[목록]="{lst}"),{n_rank}),"")',
+                    size=9)
+                rr = ws.Range(ws.Cells(row0 + 2, c0 + off), ws.Cells(last, c0 + off))
                 set_nf(rr, nf or "General")
                 rr.Font.Size = 9
-            fill(ws.Range(ws.Cells(row0 + 1, c0), ws.Cells(row0 + 16, c0 + 7)), "card")
-            style(ws.Range(ws.Cells(row0 + 2, c0), ws.Cells(row0 + 16, c0)), color=C["muted"], h=XL_CENTER)
-            style(ws.Range(ws.Cells(row0 + 2, c0 + 3), ws.Cells(row0 + 16, c0 + 3)), color=C["muted"], size=8)
-            first = ws.Cells(row0 + 2, c0 + 1).Address.replace("$", "")
-            cf_expr(ws.Range(ws.Cells(row0 + 2, c0 + 1), ws.Cells(row0 + 16, c0 + 2)),
-                    f'=COUNTIF(tblQuote_종목명,{first})>0', font=C["accent"], bold=True)
-        put(ws, "B95", "※ 외국인/기관 순매수는 장중 가집계(09:30·11:20·13:20·14:30 입력) 기준 | 파란 굵은 글씨 = 보유·관심 종목",
-            size=8, color=C["muted"])
+            bottom_line(ws.Range(ws.Cells(row0 + 1, c0), ws.Cells(row0 + 1, c0 + 10)))
+            fill(ws.Range(ws.Cells(row0 + 1, c0), ws.Cells(last, c0 + 10)), "card")
+            style(ws.Range(ws.Cells(row0 + 2, c0), ws.Cells(last, c0)), color=C["muted"], h=XL_CENTER)
+            style(ws.Range(ws.Cells(row0 + 2, c0 + 3), ws.Cells(last, c0 + 3)), color=C["gold"], h=XL_CENTER)
+            style(ws.Range(ws.Cells(row0 + 2, c0 + 4), ws.Cells(last, c0 + 4)), color=C["muted"], size=8)
+            # 보유·관심 파란 굵은 글씨(종목명) → 대회 밖 회색(#·종목·대회·섹터 칸) → 파랑을 맨 앞 우선순위로
+            r2 = row0 + 2
+            first = ws.Cells(r2, c0 + 1).Address.replace("$", "")
+            blue = cf_expr(ws.Range(ws.Cells(r2, c0 + 1), ws.Cells(last, c0 + 2)),
+                           f'=COUNTIF(tblQuote_종목명,{first})>0', font=C["accent"], bold=True)
+            cf_expr(ws.Range(ws.Cells(r2, c0), ws.Cells(last, c0 + 4)),
+                    f'=AND(${col_letter(c0 + 1)}{r2}<>"",${col_letter(c0 + 3)}{r2}<>"★")', font=NONCONTEST_GREY)
+            blue.SetFirstPriority()
+        note_row = MKT_RANK_TOP + 3 * (n_rank + 3)
+        put(ws, f"B{note_row}", "※ 시장 전체 개별종목(ETF·ETN·SPAC 제외) | ★ = 대회 종목 · 회색 = 대회 종목 아님 | 파란 굵은 글씨 = 보유·관심 종목 | "
+                                "외국인/기관 순매수는 장중 가집계(09:30·11:20·13:20·14:30 입력) 기준", size=8, color=C["muted"])
+
+        # 증시 자금 동향 (spec R13) — tblMktFunds: 일자 오름차순 약 100영업일, 금액 억원(빈칸 가능·0 없음), 공표 1~2일 늦음.
+        # 항목마다 비어 있지 않은 값만으로 최신값과 1·5·20개 전 값의 차(1D·1W·1M)를 구함. 잔고는 조원, 증감은 억원.
+        top = MKT_FUNDS_TOP
+        ws.Rows(top - 1).RowHeight = 8
+        section(ws, f"B{top}:Y{top}", "증시 자금 동향 (금융투자협회 집계)")
+        put(ws, f"Y{top}", formula='="기준일 "&IFERROR(TEXT(MAX(tblMktFunds[일자]),"yyyy-mm-dd"),"-")&"  ·  공표가 1~2일 늦음"',
+            size=8, color=C["muted"], h=XL_RIGHT)
+        hdr = top + 1
+        for c, head in (("B", "항목"), ("D", "잔고(조원)"), ("E", "1D(억)"), ("F", "1W(억)"), ("G", "1M(억)"), ("H", "1M 증감률"),
+                        ("I", "기준일")):
+            put(ws, f"{c}{hdr}", head, bold=True, size=8, color=C["muted"], h=XL_LEFT if c == "B" else XL_RIGHT)
+        bottom_line(ws.Range(f"B{hdr}:L{hdr}"))
+        funds = [("고객예탁금", "고객예탁금억"), ("신용융자 잔고", "신용융자억"), ("미수금", "미수금억"),
+                 ("주식형 펀드(평가액)", "주식형억"), ("MMF", "MMF억")]
+        for i, (label, col) in enumerate(funds):
+            r = hdr + 1 + i
+            v = f'FILTER(tblMktFunds[{col}],ISNUMBER(tblMktFunds[{col}]))'
+            diff = lambda k, v=v: f'=IFERROR(LET(v_s,{v},n_s,ROWS(v_s),IF(n_s>{k},INDEX(v_s,n_s)-INDEX(v_s,n_s-{k}),"")),"")'  # noqa: E731
+            put(ws, f"B{r}", label, bold=True, size=9)
+            put(ws, f"D{r}", formula=f'=IFERROR(LET(v_s,{v},INDEX(v_s,ROWS(v_s))/10000),"-")', nf="#,##0.0", size=9)
+            put(ws, f"E{r}", formula=diff(1), nf=NF["krw_pl"], size=9)
+            put(ws, f"F{r}", formula=diff(5), nf=NF["krw_pl"], size=9)
+            put(ws, f"G{r}", formula=diff(20), nf=NF["krw_pl"], size=9)
+            put(ws, f"H{r}", formula=f'=IFERROR(LET(v_s,{v},n_s,ROWS(v_s),IF(n_s>20,INDEX(v_s,n_s)/INDEX(v_s,n_s-20)-1,"")),"")',
+                nf=NF["pct_pl"], size=9)
+            put(ws, f"I{r}", formula=f'=IFERROR(LET(d_s,FILTER(tblMktFunds[일자],ISNUMBER(tblMktFunds[{col}])),INDEX(d_s,ROWS(d_s))),"")',
+                nf=NF["mmdd"], size=9, h=XL_RIGHT)
+            bottom_line(ws.Range(f"B{r}:L{r}"), "line2")
+        n0 = hdr + len(funds) + 2
+        for j, t in enumerate(("※ 1D·1W·1M = 1·5·20영업일 전 공표값과의 차이. 공표가 1~2일 늦어 기준일이 오늘보다 앞섭니다.",
+                               "※ 주식형 펀드 잔고는 평가액이라 주가 등락에 따라 움직입니다(자금 유출입과 다름).",
+                               "※ MMF는 분기 말에 줄었다가 돌아오는 계절성이 있습니다. [모두 새로 고침]에서 갱신(KIS 호출 1회).")):
+            put(ws, f"B{n0 + j}", t, size=8, color=C["muted"])
+        fill(ws.Range(f"B{hdr}:L{top + 15}"), "card")
+        # 60영업일 추이 차트 도우미 (숨김 AL:AN). 두 잔고의 수준이 약 3배 차이(고객예탁금 ≈100조, 신용융자 ≈30조)라
+        # 0부터 시작하는 이중 축에서는 두 선이 납작해지므로, 창의 첫날 대비 변화율로 한 축에 그린다(지수 60일 누적 등락률
+        # 차트와 같은 방식, 잔고 수준은 왼쪽 표). 빈 값은 NA()로 끊어 그림
+        put(ws, "AL5", "자금 도우미", size=8, color=C["muted"])
+        put(ws, "AL6", formula='=IFERROR(TAKE(tblMktFunds[일자],-60),NA())', nf=NF["mmdd"])
+        for hc_col, fld in (("AM", "고객예탁금억"), ("AN", "신용융자억")):
+            put(ws, f"{hc_col}6", formula=f'=IFERROR(LET(v_m,TAKE(tblMktFunds[{fld}],-60),b_m,INDEX(FILTER(v_m,ISNUMBER(v_m)),1),'
+                                          f'IF(ISNUMBER(v_m),v_m/b_m-1,NA())),NA())')
+        set_nf(ws.Range("AL6:AL65"), NF["mmdd"])
+        ws.Columns("AL:AN").Hidden = True
+        shp, ch = chart(ws, f"N{hdr}:Y{top + 15}", XL_LINE, "고객예탁금 · 신용융자 잔고 추이 (최근 60영업일, 첫날 대비 %)")
+        series(ch, "고객예탁금", ws.Range("AL6:AL65"), ws.Range("AM6:AM65"), color=C["accent"], weight=2)
+        series(ch, "신용융자 잔고", ws.Range("AL6:AL65"), ws.Range("AN6:AN65"), color=C["warn"], weight=1.75)
+        style_axes(ch, y_nf="0%", x_nf="mm/dd", legend=XL_LEGEND_TOP)
+        try:
+            ch.Axes(1).TickLabelSpacing = 5     # 날짜 60개 → 5영업일 간격 눈금 이름(겹침 방지)
+        except Exception:  # noqa: BLE001 — 축 서식 실패는 차트 자체에 영향 없음
+            pass
         freeze(ws, 4)
         self.say("시장 시트 완료")
 
@@ -1209,12 +1368,16 @@ class Builder:
         ws = self.ws["시세판"]
         sheet_setup(ws, bg=False, zoom=85, tab="accent", widths={"A": 1.5})
         ws.Rows(1).RowHeight = 6
-        title_bar(ws, "QUOTE BOARD", "보유·관심 종목 시세 · 밸류에이션 · 52주 · 수급 · 기술적 신호 | 관심종목은 [설정] 시트에서 추가",
-                  "B2:BD3", right_formula=self.HEADER_RIGHT, right_cell="R2", right2_formula=self.HEADER_STATUS, right2_cell="R3")
-        fill(ws.Range("B4:BD4"), "navy2")
-        self.nav_links(ws, 4)
         lo = self.lo["tblQuote"]
-        widths = {"구분": 8, "종목코드": 9, "종목명": 15, "시장": 9, "섹터": 12, "현재가": 11, "전일대비": 9,
+        # 표 오른쪽 끝(새 열로 넓어짐) — 제목 막대는 표 끝 + 2열까지(최소 기존 BD), 차트 도우미는 그 오른쪽
+        tbl_last = lo.Range.Column + lo.ListColumns.Count - 1
+        bar_end = col_letter(max(tbl_last + 2, 56))
+        title_bar(ws, "QUOTE BOARD", "보유·관심 종목 시세 · 밸류에이션 · 52주 · 수급(추정가집계 포함) · 신용/공매도 · 다음 이벤트 · 기술적 신호 | "
+                  "관심종목은 [설정] 시트에서 추가", f"B2:{bar_end}3", right_formula=self.HEADER_RIGHT, right_cell="R2",
+                  right2_formula=self.HEADER_STATUS, right2_cell="R3")
+        fill(ws.Range(f"B4:{bar_end}4"), "navy2")
+        self.nav_links(ws, 4)
+        widths = {"구분": 8, "종목코드": 9, "종목명": 15, "시장": 9, "섹터": 16, "대테마": 12, "현재가": 11, "전일대비": 9,
                   "등락률": 9, "시가": 10, "고가": 10, "저가": 10, "전일종가": 10, "거래량": 12, "거래대금억": 10,
                   "전일대비거래량": 9, "시가총액억": 12, "PER": 7, "PBR": 6, "EPS": 9, "BPS": 9, "외국인소진율": 8,
                   "고52주": 10, "고52주일": 10, "고52주대비": 9, "저52주": 10, "저52주일": 10, "저52주대비": 9,
@@ -1222,7 +1385,8 @@ class Builder:
                   "외국인20일억": 10, "기관20일억": 10, "상한가": 10, "하한가": 10, "유의": 10, "DB유의": 10,
                   "상태": 6, "조회시각": 15, "거래량비율": 8, "MA20": 10, "MA60": 10, "추세": 6, "RSI14": 7,
                   "수익률20일": 9, "수익률60일": 9, "변동성20": 8, "교차": 10, "관심가": 10, "목표가": 10,
-                  "투자포인트": 24, "신호": 34}
+                  "투자포인트": 24, "신호": 34, "다음이벤트": 18, "신용잔고율": 8, "공매도비중5일": 9, "추정시점": 7,
+                  "추정외국인주": 11, "추정기관주": 11, "추정합산억": 10}
         for c, w in widths.items():
             set_col_format(lo, c, width=w)
         nfs = {"현재가": NF["krw"], "전일대비": "+#,##0;-#,##0;0", "등락률": NF["pct_arrow"], "시가": NF["krw"], "고가": NF["krw"],
@@ -1231,11 +1395,15 @@ class Builder:
                "외국인소진율": NF["pct1"], "고52주": NF["krw"], "고52주일": NF["date"], "고52주대비": NF["pct1"],
                "저52주": NF["krw"], "저52주일": NF["date"], "저52주대비": NF["pct1"], "외국인당일주": "+#,##0;-#,##0;0",
                "프로그램당일주": "+#,##0;-#,##0;0", "외국인5일억": NF["eok_pl"], "기관5일억": NF["eok_pl"], "개인5일억": NF["eok_pl"],
-               "외국인20일억": NF["eok_pl"], "기관20일억": NF["eok_pl"], "상한가": NF["krw"], "하한가": NF["krw"], "조회시각": NF["dt"]}
+               "외국인20일억": NF["eok_pl"], "기관20일억": NF["eok_pl"], "상한가": NF["krw"], "하한가": NF["krw"], "조회시각": NF["dt"],
+               "신용잔고율": NF["pct"], "공매도비중5일": NF["pct1"], "추정외국인주": "+#,##0;-#,##0;0", "추정기관주": "+#,##0;-#,##0;0",
+               "추정합산억": '[Color10]+#,##0.0"억";[Color11]-#,##0.0"억";0.0"억"'}
         for c, nf in nfs.items():
             set_col_format(lo, c, nf=nf)
         set_col_format(lo, "종목명", bold=True)
+        set_col_format(lo, "추정시점", h=XL_CENTER)
         style(lo.ListColumns("신호").DataBodyRange, color=C["warn"], size=9)
+        style(lo.ListColumns("다음이벤트").DataBodyRange, color=C["navy"], size=9)
         body = lo.DataBodyRange
         if body is not None:
             r0 = body.Row
@@ -1285,8 +1453,8 @@ class Builder:
             r += 1
         fill(ws.Range("B7:F21"), "card")
         style(ws.Range("D20"), color=C["warn"], size=9)
-        # 차트 도우미 (숨김 열)
-        base = 60  # BH 열 근처 (표 오른쪽)
+        # 차트 도우미 (숨김 열) — 표 오른쪽 끝에서 6열 뒤(새 열로 표가 넓어져도 겹치거나 숨겨지지 않게; 기존 표 폭이면 BH)
+        base = max(60, tbl_last + 6)
         hc = [col_letter(base + i) for i in range(5)]
         put(ws, f"{hc[0]}6", "차트 도우미", size=8, color=C["muted"])
         put(ws, f"{hc[0]}7", formula='=IFERROR(FILTER(tblPriceHist[일자],tblPriceHist[종목코드]=$C$7),NA())', nf=NF["mmdd"])
@@ -1313,7 +1481,8 @@ class Builder:
         series(ch, "거래량(우)", f"='{n}'!차트_일자", f"='{n}'!차트_거래량", kind=XL_COLUMN_CLUSTERED, fill_color="#D5DCE6",
                axis=XL_SECONDARY)
         style_axes(ch, y_nf="#,##0", x_nf="mm/dd", y2_nf="#,##0,,\"M\"", legend=XL_LEGEND_TOP)
-        section(ws, "B25:R25", "시세판 (보유 → 관심 순)", "행을 클릭해 필터/정렬 가능 · 신호: 52주고가근접·거래량급증·골든크로스·RSI·관심가·수급", "R25")
+        section(ws, "B25:R25", "시세판 (보유 → 관심 순)", "필터/정렬 가능 · 신호: 52주고가근접·거래량급증·골든크로스·RSI·관심가·수급 · "
+                "추정가집계는 개장일 장중(09:00~15:30)만 · 신용/공매도·이벤트는 [전체] 갱신값", "R25")
         freeze(ws, 27, 4)
         self.say("시세판 시트 완료")
 
@@ -1395,8 +1564,10 @@ class Builder:
         ws = self.ws["종목DB"]
         sheet_setup(ws, bg=False, zoom=85, tab="#6B7785", widths={"A": 1.5})
         ws.Rows(1).RowHeight = 6
-        title_bar(ws, "UNIVERSE", "KOSPI·KOSDAQ 개별 종목 마스터 (KIS 종목정보 파일) — ETF·ETN·리츠·펀드 제외 | 대회편입 N = 거래정지·정리매매·SPAC",
-                  "B2:Y3", right_formula='="종목 수 "&TEXT(COUNTA(tblUniverse[종목코드]),"#,##0")', right_cell="Y2")
+        title_bar(ws, "UNIVERSE", "KOSPI·KOSDAQ 개별 종목 마스터 (KIS 종목정보 파일, ETF·ETN·리츠·펀드 제외) | 대회편입 Y = 대회 종목: "
+                  "2026-09-30 기준 시총 1,000억·5일 평균 거래대금 25억 이상 보통주(고정 명단) ± [설정] 수정표 | 섹터 = [설정] 섹터 기준",
+                  "B2:Y3", right_formula='="종목 수 "&TEXT(COUNTA(tblUniverse[종목코드]),"#,##0")&" · 대회 종목 "&'
+                                         'TEXT(COUNTIF(tblUniverse[대회편입],"Y"),"#,##0")', right_cell="Y2")
         fill(ws.Range("B4:Y4"), "navy2")
         self.nav_links(ws, 4)
         section(ws, "B6:Y6", "종목 검색", "이름 일부 또는 코드 입력 → 최대 10건", "Y6")
@@ -1416,13 +1587,16 @@ class Builder:
         set_nf(ws.Range("J9:M18"), NF["num0"])
         set_nf(ws.Range("N9:O18"), NF["pct1"])
         fill(ws.Range("B8:O18"), "card")
-        section(ws, "B20:Y20", "전체 종목 (시가총액순) — 필터 버튼으로 시장·섹터·유의사항 걸러보기")
+        section(ws, "B20:Y20", "전체 종목 (시가총액순) — 필터 버튼으로 시장·섹터·대회편입·대테마·유의사항 걸러보기 "
+                               "| 대분류·NICS 업종·NICS 세부 = NICS(VALUESearch, 없으면 KRX업종) · 분류출처 · 대회비고")
         lo = self.lo["tblUniverse"]
-        for c, (w, nf) in {"종목코드": (10, None), "종목명": (17, None), "시장": (9, None), "섹터": (13, None), "규모": (7, None),
+        for c, (w, nf) in {"종목코드": (10, None), "종목명": (17, None), "시장": (9, None), "섹터": (16, None), "규모": (7, None),
                            "지수편입": (11, None), "유의사항": (16, None), "대회편입": (9, None), "기준가": (11, NF["krw"]),
                            "시가총액억": (12, NF["num0"]), "매출액억": (11, NF["num0"]), "영업이익억": (11, NF["num0"]),
                            "영업이익률": (11, NF["pct1"]), "ROE": (8, NF["pct1"]), "재무기준": (10, None), "상장일": (11, NF["date"]),
-                           "상장주식수": (14, NF["num0"]), "대분류": (9, None), "우선주": (8, None), "SPAC": (8, None),
+                           "상장주식수": (14, NF["num0"]), "대분류": (11, None), "NICS 업종": (16, None), "NICS 세부": (18, None),
+                           "대테마": (12, None), "세부테마": (16, None), "분류출처": (9, None), "대회비고": (16, None),
+                           "KRX업종": (12, None), "우선주": (8, None), "SPAC": (8, None),
                            "거래정지": (9, None), "관리종목": (9, None), "시장경고": (9, None), "종류": (7, None)}.items():
             set_col_format(lo, c, nf=nf, width=w)
         freeze(ws, 21, 3)
@@ -1432,16 +1606,39 @@ class Builder:
     def build_settings_sheet(self):
         ws = self.ws["설정"]
         ws.Rows(1).RowHeight = 6
-        title_bar(ws, "SETTINGS", "노란 칸만 수정하세요 · 표 아래 행에 입력하면 표가 자동 확장됩니다", "B2:U3")
-        fill(ws.Range("B4:U4"), "navy2")
+        # 제목 막대는 ⑤ 수정표 열(W:AD)까지
+        bar_end = col_letter(ws.Range(OVERRIDE_ANCHOR).Column + len(OVERRIDE_HEADERS) - 1)
+        title_bar(ws, "SETTINGS", "노란 칸만 수정하세요 · 표 아래 행에 입력하면 표가 자동 확장됩니다 · ⑤ 수정표는 오른쪽 끝", f"B2:{bar_end}3")
+        fill(ws.Range(f"B4:{bar_end}4"), "navy2")
         self.nav_links(ws, 4)
         put(ws, "B5", "① 기본 설정", bold=True, size=11, color=C["navy"])
         put(ws, "G5", "② 관심종목 (시세판·알림 대상)", bold=True, size=11, color=C["navy"])
         put(ws, "N5", "③ 해외·환율·금리 (N=지수, X=환율, I=금리)", bold=True, size=11, color=C["navy"])
         put(ws, "T5", "④ 휴장일 (D-day 계산)", bold=True, size=11, color=C["navy"])
-        put(ws, "B28", "※ 앱키·시크릿은 이 통합문서에 저장되지 않습니다. Power Query가 위 경로의 kis_devlp.yaml(저장소 샘플코드와 같은 파일)을 직접 읽습니다.",
+        # 새 설정 키 입력 도우미(목록) — 키 이름으로 행을 찾음(행 위치가 바뀌어도 맞게)
+        lo = self.lo["tblSettings"]
+        keys = [str(k).strip() if k is not None else "" for (k,) in lo.ListColumns("키").DataBodyRange.Value]
+        for key, choices in (("sector_basis", "대분류,업종,세부,대테마"), ("force_weekly", "Y,N")):
+            if key in keys:
+                validation_list(lo.ListColumns("값").DataBodyRange.Cells(keys.index(key) + 1, 1), choices)
+        # 기본 설정 표가 새 키로 B6:E35까지 길어졌으므로 기존 안내 문구는 표 아래로(B28·B29에서 이동)
+        n = SETTINGS_NOTE_ROW
+        put(ws, f"B{n}", "※ 앱키·시크릿은 이 통합문서에 저장되지 않습니다. Power Query가 위 경로의 kis_devlp.yaml(저장소 샘플코드와 같은 파일)을 직접 읽습니다.",
             size=9, color=C["muted"])
-        put(ws, "B29", "※ 휴장일 목록은 참고용입니다. 한국거래소(KRX) 휴장일 공지로 확인 후 필요하면 수정하세요.", size=9, color=C["muted"])
+        put(ws, f"B{n + 1}", "※ 휴장일 목록은 참고용입니다. 한국거래소(KRX) 휴장일 공지로 확인 후 필요하면 수정하세요.", size=9, color=C["muted"])
+        ov_col = "".join(ch for ch in OVERRIDE_TITLE_CELL if ch.isalpha())
+        hyperlink(ws, f"B{n + 2}", f"'설정'!{OVERRIDE_TITLE_CELL}", f"› ⑤ 수정표(대회편입·분류 고치기)는 오른쪽 {ov_col}열에 있습니다")
+        style(ws.Range(f"B{n + 2}"), color=C["accent"], size=9)
+        # ⑤ 수정표 (spec R4) — 표는 build_inputs가 OVERRIDE_ANCHOR에 만듦. 무시되는 행이 있으면 제목 줄 오른쪽에 경고
+        t = ws.Range(OVERRIDE_TITLE_CELL)
+        put(ws, t.Address, "⑤ 수정표 (대회편입·분류 — 항상 우선)", bold=True, size=11, color=C["navy"])
+        put(ws, OVERRIDE_WARN_CELL, formula=F_OVERRIDE_WARN, bold=True, size=10, color=C["up"])
+        put(ws, ws.Cells(t.Row + 1, t.Column).Address,
+            "종목코드(6자리)와 바꿀 칸만 입력 · 빈칸 = 수정 없음 · 대회편입: 추가(대회 종목으로) / 제외(대회 종목에서 뺌) · "
+            "같은 종목을 여러 행에 쓰면 칸마다 아래쪽 값 우선", size=9, color=C["text"])
+        put(ws, ws.Cells(t.Row + 2, t.Column).Address,
+            "잘못된 종목코드·대회편입 값, 종목DB에 없는 코드는 무시(위에 경고) · 반영: [모두 새로 고침] → 종목DB·순위★ "
+            "(포트폴리오·시세판의 섹터·대테마는 한 번 더) · 대회종목 페이지는 [시세]/[전체]", size=9, color=C["muted"])
         freeze(ws, 6)
 
     # -------------------------------------------------------------------------------------------------------
@@ -1449,39 +1646,87 @@ class Builder:
         ws = self.ws["가이드"]
         sheet_setup(ws, zoom=90, tab="#6B7785", widths={"A": 2, "B": 4, "C": 110})
         ws.Rows(1).RowHeight = 6
-        title_bar(ws, "GUIDE", "처음 설정 · 매일 루틴 · 지표 정의 · 문제 해결", "B2:C3")
+        title_bar(ws, "GUIDE", "처음 설정 · 버튼과 페이지 · 매일 루틴 · 수정표 · 지표 정의 · 데이터 한계 · 문제 해결", "B2:C3")
         fill(ws.Range("B4:C4"), "navy2")
         self.nav_links(ws, 4)
         lines = [
             ("h", "1. 처음 한 번만"),
             ("t", "① 저장소 README 3.5절대로 ~/KIS/config/kis_devlp.yaml 에 실전투자 앱키(my_app)·시크릿(my_sec)을 입력합니다. (시세·순위 API는 실전 앱키 필요)"),
-            ("t", "② [설정] 시트에서 대회 시작일·종료일·초기자금·수수료율·거래세율·벤치마크를 대회 규정에 맞게 수정합니다."),
+            ("t", "② [설정] 시트에서 대회 시작일·종료일·초기자금·수수료율·거래세율·벤치마크를 대회 규정에 맞게 수정합니다. "
+                  "VALUESearch 파일 경로(vs_path)와 섹터 기준(sector_basis)도 확인합니다."),
             ("t", "③ [매매일지]의 [샘플] 행과 [설정]의 샘플 관심종목을 지우고 내 종목으로 바꿉니다."),
-            ("t", "④ 파일을 열 때 노란 '보안 경고' 줄이 뜨면 [콘텐츠 사용]을 누릅니다. '웹 콘텐츠 액세스' 창이 뜨면 [익명] → [연결]."),
-            ("t", "⑤ [데이터] > [모두 새로 고침] (Ctrl+Alt+F5). 첫 실행이나 토큰 재발급 직후 오류가 보이면 한 번 더 새로 고침합니다."),
-            ("h", "2. 매일 루틴 (실제 운용역처럼)"),
-            ("t", "08:30 장 전 — 모두 새로 고침 → [시장] 해외지수·환율·금리 확인 → [대시보드] 알림(손절/목표/비중) 확인 → 오늘 매매 계획 메모."),
-            ("t", "장중 — 필요할 때마다 새로 고침(약 20~40초). [시세판] 신호(거래량급증·신고가근접·골든크로스)와 [시장] 주도주·수급 확인."),
+            ("t", "④ 파일을 열 때 노란 '보안 경고' 줄이 뜨면 [콘텐츠 사용]을 누릅니다 — 매크로(버튼)와 데이터 연결을 허용하는 단계라 "
+                  "누르지 않으면 버튼이 동작하지 않습니다. '웹 콘텐츠 액세스' 창이 뜨면 [익명] → [연결]."),
+            ("t", "⑤ [데이터] > [모두 새로 고침] (Ctrl+Alt+F5) 뒤 [대회종목] 시트의 [전체]를 한 번 눌러 가격 이력·수급·목표주가 등을 처음 채웁니다"
+                  "(처음 한 번은 오래 걸립니다). 첫 실행이나 토큰 재발급 직후 오류가 보이면 한 번 더 새로 고침합니다."),
+            ("h", "2. 버튼과 페이지"),
+            ("t", "[모두 새로 고침] (Ctrl+Alt+F5) — 가벼운 데이터: 지수·시장 수급·업종 등락·해외지표·주도주 순위·시세판(외인·기관 추정가집계 포함)·"
+                  "보유/NAV/위험·뉴스·증시 자금. 버튼 전용 데이터는 건드리지 않습니다."),
+            ("t", "[시세] ([대회종목] 시트) — 대회 종목·보유·관심의 현재가를 받아 가격 이력의 마지막 세션 봉을 갱신하고 기간 등락·테마 집계를 다시 "
+                  "계산합니다. 장중 수시로 누릅니다."),
+            ("t", "[전체] ([대회종목] 시트) — [시세]의 모든 것 + 분류(VALUESearch) · 가격 이력 보정 · 종목 수급 · 목표주가 · KIS 추정과 스냅샷 · "
+                  "이벤트 · 주간 항목(분기 실적·신용/공매도/대차, 갱신 시기가 됐을 때) · KRX 업종. 하루 한 번 장 마감 후."),
+            ("t", "[업종] ([업종] 시트) — KRX 업종지수·업종별 투자자 수급과 테마 집계만 갱신합니다."),
+            ("t", "[조회] ([종목분석] 시트) — 종목코드 칸의 한 종목만 자세히(투자자 120세션·체결금액별 매매비중·매물대·추정가집계·신용/공매도·"
+                  "목표주가·추정실적·분기 실적·뉴스·이벤트) 받아 옵니다. 대회 종목이 아니어도 됩니다."),
+            ("t", "버튼을 누르면 상태 표시줄에 진행 단계가 보이고, 끝나면 단계별 요약 창이 뜹니다. 버튼 옆 '최근 조회'에 끝난 시각, '상태'에 "
+                  "정상 / 일부 오류 n건 / 실패(이전 데이터 표시 중)가 남습니다. 실행 중 Esc를 누르면 진행 중인 단계 뒤에서 멈춥니다."),
+            ("t", "새 페이지: [대회종목] 대회 종목 전체(Q.Pack형 3색·최근 20일 줄무늬, +/− 열 묶음) · [업종] KRX 업종·테마 집계 · "
+                  "[종목분석] 한 종목 상세 · [뉴스·이벤트] 이벤트 캘린더와 보유·관심 뉴스 100건."),
+            ("t", "기존 화면: [시장]·[대시보드] 주도주는 시장 전체 개별종목이며 ★ = 대회 종목(회색 = 대회 밖), [시장]에 증시 자금 동향 추가, "
+                  "[시세판]에 대테마·추정가집계·신용잔고율·공매도 비중·다음 이벤트 열 추가, [종목DB]에 NICS·테마·대회비고 열 추가."),
+            ("h", "3. 매일 루틴 (실제 운용역처럼)"),
+            ("t", "08:30 장 전 — [모두 새로 고침] → [시장] 해외지수·환율·금리·증시 자금 확인 → [대시보드] 알림(손절/목표/비중) 확인 → 오늘 매매 계획 메모. "
+                  "(장 시작 전 [시세]는 새 봉을 만들지 않고 마지막 세션 봉만 갱신합니다)"),
+            ("t", "장중 — 필요할 때 [모두 새로 고침](시세판·순위·추정가집계) + [시세](대회종목 페이지). [시세판] 신호·다음 이벤트, "
+                  "[시장] 주도주(★)·수급 확인."),
             ("t", "매매 직후 — [매매일지]에 한 줄 기록(매매근거 필수). 새로 고침하면 포트폴리오·NAV·위험이 즉시 갱신됩니다."),
-            ("t", "15:40 장 마감 후 — 새로 고침 → [성과] 샤프·MDD·초과수익 점검 → [리스크] 위험기여 상위 종목 점검 → 내일 계획."),
-            ("h", "3. 지표 정의 (대회 평가 대비)"),
+            ("t", "장 마감 후 — 15:40 이후에 [전체](종목별 수급 API가 15:40 전에는 오늘 날짜를 받지 않음) → [성과] 샤프·MDD·초과수익 점검 → "
+                  "[리스크] 위험기여 상위 종목 점검 → [대회종목]·[업종]으로 내일 계획."),
+            ("h", "4. 수정표 ([설정] ⑤) — 대회편입·분류 고치기"),
+            ("t", "종목코드(6자리)를 쓰고 바꿀 칸만 채웁니다. 빈칸 = 수정 없음. 대회편입: 추가 = 대회 종목으로 취급, 제외 = 대회 종목에서 뺌 "
+                  "(고정 명단은 그대로 두고 모든 화면에서 같은 판정)."),
+            ("t", "대테마·세부테마·NICS 대분류·NICS 업종·NICS 세부에 값을 쓰면 기본 분류(VALUESearch NICS·기본 테마표)보다 항상 우선합니다. "
+                  "같은 종목을 여러 행에 쓰면 칸마다 아래쪽 행의 값이 우선합니다."),
+            ("t", "잘못된 종목코드(6자리 영숫자 아님)·잘못된 대회편입 값·종목DB에 없는 코드는 무시되고 수정표 위에 '⚠ 수정표 n행 무시됨'이 뜹니다."),
+            ("t", "반영: [모두 새로 고침] → 종목DB·주도주 ★. 포트폴리오·리스크·시세판의 섹터·대테마는 종목DB를 읽으므로 [모두 새로 고침]을 한 번 더 "
+                  "합니다. 대회종목 페이지는 [시세]/[전체] — 새로 추가한 종목의 가격 이력은 [전체]에서 채웁니다."),
+            ("t", "섹터 기준: [설정] sector_basis = 대분류 / 업종 / 세부(기본) / 대테마. 포트폴리오 섹터 비중·리스크 섹터 집중도·대시보드 섹터 차트·"
+                  "시세판·순위의 '섹터'가 이 기준을 따릅니다(값이 없으면 세부 → 업종 → 대분류 → KRX 업종)."),
+            ("h", "5. 지표 정의 (대회 평가 대비)"),
             ("t", "NAV(t) = 초기자금 + 누적 현금흐름 + Σ 보유수량×종가(수정주가). 외부 입출금이 없다는 가정의 시간가중수익률과 같습니다."),
             ("t", "샤프지수 = (일간수익률 평균 − 무위험수익률/252) ÷ 일간수익률 표준편차 × √252. 대회가 rf=0을 쓰면 'rf=0' 값을 보세요."),
             ("t", "MDD = 고점 대비 최대 하락률. 알파 = 젠센 알파(연율화). 정보비율 = 연 초과수익 ÷ 추적오차."),
             ("t", "사전 변동성·위험기여 = 현재 비중을 최근 60영업일 수익률에 적용한 가상 포트폴리오 기준. 위험기여비중 합계 = 100%."),
             ("t", "샤프를 높이는 법: 같은 기대수익이면 변동성을 줄인다 → 위험기여가 비중보다 큰 종목 축소, 상관 낮은 섹터 분산, 손절 규칙 준수."),
-            ("h", "4. 데이터 구조"),
+            ("h", "6. 데이터 구조와 한계"),
             ("t", "Power Query 원본: excel_dashboard/powerquery/*.pq (저장소 examples_llm 샘플의 URL·tr_id·파라미터를 그대로 M으로 옮김)."),
             ("t", "T_Token만 토큰을 발급합니다(1분당 1회·발급 시 알림톡). 나머지 쿼리는 캐시된 토큰만 읽습니다. 유효시간 3시간 미만일 때만 재발급."),
-            ("t", "호출 제한(초당 건수) 초과 시 각 호출이 자동으로 최대 5회 재시도합니다. 관심종목이 많을수록 새로 고침이 느려집니다(종목당 약 4회 호출)."),
+            ("t", "호출 제한(초당 건수) 초과 시 각 호출이 자동으로 최대 5회 재시도합니다. 관심·보유 종목이 많을수록 [모두 새로 고침]이 느려집니다"
+                  "(종목당 약 4~6회 호출: 시세·수급·일봉·뉴스·장중 추정가집계)."),
             ("t", "조회에 실패하면 오류 창 대신 직전 데이터를 그대로 두고 상태 열에 ‘이전 데이터(갱신 실패: 사유)’를 적습니다 → 머리글 경고를 확인하세요."),
             ("t", "시장·순위·수급·지수 API는 모의투자 도메인에서 지원되지 않는 경우가 많아 실전 도메인(prod)을 사용합니다. 주문은 전혀 하지 않습니다(조회 전용)."),
-            ("h", "5. 문제 해결"),
+            ("t", "VALUESearch 파일 갱신: VALUESearch에서 수집기업 목록을 다시 내보내 같은 형식(시트 Sheet2, 1행 머리글, 열 '종목코드'·"
+                  "'691300.NICS 산업분류' 등)으로 [설정] vs_path 위치에 덮어씁니다(기본값 = 저장소 루트의 수집기업_valuesearch.xlsx). "
+                  "그다음 [전체](분류 갱신) → [모두 새로 고침](종목DB 반영). 파일을 못 읽거나 열 이름이 다르면 직전 분류를 유지하고 상태에 사유를 남깁니다."),
+            ("t", "데이터 한계: KIS 추정실적(Fwd PER)은 대회 종목의 약 21%, 목표주가는 약 58%만 있습니다 — 빈칸은 오류가 아닙니다. "
+                  "KIS 추정은 한국투자증권 리서치 자체 추정이며 컨센서스가 아닙니다."),
+            ("t", "당일 전용 데이터: 외인·기관 추정가집계(장중 09:30·10:00·11:20·13:20·14:30 입력 — 시세판은 개장일 09:00~15:30에만 표시), "
+                  "체결금액별 매매비중·당일 매물대([조회])는 지난 날짜를 받을 수 없습니다."),
+            ("t", "늦게 오는 데이터: 신용잔고는 약 2영업일 늦게 공표되고, 증시 자금은 1~2일 늦습니다(각 표의 기준일 확인). 분기 실적은 KIS 재무 자료 "
+                  "갱신이 늦어 약 50종목은 최근 분기가 늦게 반영됩니다. 주식형 펀드 잔고는 평가액이라 주가 등락을 따라 움직입니다."),
+            ("h", "7. 문제 해결"),
             ("t", "“유효한 접근토큰이 없습니다” → 모두 새로 고침 한 번 더. 계속되면 [데이터] > [쿼리 및 연결] > T_Token 우클릭 > 새로 고침."),
             ("t", "“EGW00133” (토큰 1분당 1회) → 1분 후 다시. “EGW00201” (초당 건수 초과) → 자동 재시도, 계속되면 [설정] 종목별 수급 조회를 N으로."),
             ("t", "“Formula.Firewall” → [데이터] > [데이터 가져오기] > [쿼리 옵션] > 현재 통합 문서 > 개인정보 > '개인 정보 수준 무시' 선택."),
             ("t", "“kis_devlp.yaml에 필수 항목이 없습니다” → [설정]의 경로 확인, 파일에 my_app / my_sec / prod 항목이 있어야 합니다."),
             ("t", "통합문서를 다른 사람에게 보낼 때 → 숨김 시트 _sys의 토큰 표 내용을 지우고 보내세요(앱키·시크릿은 원래 포함되지 않음)."),
+            ("t", "버튼을 눌러도 아무 일이 없음 → 파일을 열 때 노란 보안 경고 줄의 [콘텐츠 사용]을 눌렀는지 확인하고, 닫았다 다시 열어 [콘텐츠 사용]. "
+                  "빨간 줄 '이 파일의 원본을 신뢰할 수 없어 매크로를 차단했습니다'가 뜨면 파일을 닫고 탐색기 [속성]에서 [차단 해제]를 체크합니다. "
+                  "계속 막히면 [파일] > [옵션] > [보안 센터] > [보안 센터 설정] > [신뢰할 수 있는 위치]에 이 폴더를 추가합니다."),
+            ("t", "버튼의 상태 칸에 '실패: … 이전 데이터 표시 중' → 요약 창(또는 상태 칸)의 단계·사유를 확인하고 같은 버튼을 다시 누릅니다. "
+                  "토큰 문제면 [모두 새로 고침] 후 다시. [전체]가 장 마감 전에 수급 단계에서 실패하면 15:40 이후에 다시 누릅니다."),
+            ("t", "수정표 위에 '⚠ 수정표 n행 무시됨' → 그 행의 종목코드(6자리)·대회편입(추가/제외/빈칸) 값과 종목DB에 있는 코드인지 확인합니다."),
         ]
         r = 6
         for kind, text in lines:

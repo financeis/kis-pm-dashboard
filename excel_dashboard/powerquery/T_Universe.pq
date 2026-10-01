@@ -1,7 +1,27 @@
-// T_Universe : KOSPI·KOSDAQ 종목 유니버스 (KIS 종목정보 마스터파일, 인증 불필요)
+// T_Universe : KOSPI·KOSDAQ 종목 유니버스 (KIS 종목정보 마스터파일, 인증 불필요) + 분류·대회편입 (spec R19·R2·§5, 2026-10-01 T22)
 //  - 저장소 stocks_info/kis_kospi_code_mst.py, kis_kosdaq_code_mst.py, sector_code.py 의 정제 로직을 M으로 옮긴 것
 //  - 주식(ST)·외국주식(FS)·DR만 남기고 ETF/ETN/리츠/펀드 등은 제외
+//  - KRX업종 = 기존 섹터 계산 규칙의 KRX 지수업종 이름(중분류 → 없으면 대분류 → 없으면 "기타"). 분류 대체의 입력이자
+//    다른 쿼리(fnPageRows 등)가 읽는 열이다.
+//  - 분류·대회편입은 fnClassify(종목코드, KRX업종)가 정한다(명단·수정표·NICS·테마 규칙을 여기서 다시 구현하지 않음):
+//      대회편입 = 대회 종목 여부 Y/N(명단 tblContest ± 수정표 tblOverride), 대회비고, 섹터 = 설정 sector_basis 기준 값
+//      (없으면 세부 → 업종 → 대분류 → KRX업종), 대분류 = NICS 대분류, NICS 업종, NICS 세부, 대테마, 세부테마, 분류출처(NICS/KRX).
+//    기존 열 이름(섹터·대분류·대회편입)은 그대로 두고 값의 기준만 바뀐다. fnClassify가 버리는 형식의 종목코드(6자리 [0-9A-Z]가
+//    아님)는 대회편입 N, 섹터 = KRX업종, 나머지 분류 칸은 빈칸.
+//  - [모두 새로 고침]으로 갱신하는 일반 쿼리. tblClass(T_Class)·tblContest·tblOverride·tblThemeBase·tblSettings를 읽으므로
+//    빌드 때는 T_Class 다음에 새로 고친다(같은 새로 고침 안에서 다른 쿼리가 적재한 표는 직전 결과로 읽힘).
+//  - 앞 14개 열은 [종목DB] 검색 결과와 같은 순서(열 너비 공유). 새 분류 열은 대분류 뒤에 모아 둔다.
 let
+    Cols = {"종목코드", "종목명", "시장", "섹터", "규모", "지수편입", "유의사항", "대회편입", "기준가", "시가총액억", "매출액억",
+            "영업이익억", "영업이익률", "ROE", "재무기준", "상장일", "상장주식수", "대분류", "NICS 업종", "NICS 세부", "대테마",
+            "세부테마", "분류출처", "대회비고", "KRX업종", "우선주", "SPAC", "거래정지", "관리종목", "시장경고", "종류"},
+    Types = {{"종목코드", type text}, {"종목명", type text}, {"시장", type text}, {"섹터", type text}, {"규모", type text},
+             {"지수편입", type text}, {"유의사항", type text}, {"대회편입", type text}, {"기준가", type number},
+             {"시가총액억", type number}, {"매출액억", type number}, {"영업이익억", type number}, {"영업이익률", type number},
+             {"ROE", type number}, {"재무기준", type text}, {"상장일", type date}, {"상장주식수", type number}, {"대분류", type text},
+             {"NICS 업종", type text}, {"NICS 세부", type text}, {"대테마", type text}, {"세부테마", type text},
+             {"분류출처", type text}, {"대회비고", type text}, {"KRX업종", type text}, {"우선주", type text}, {"SPAC", type text},
+             {"거래정지", type text}, {"관리종목", type text}, {"시장경고", type text}, {"종류", type text}},
     Main =
         let
             BaseUrl = "https://new.real.download.dws.co.kr",
@@ -40,6 +60,7 @@ let
                             F = (k as text) as text => Sub(p2, Record.Field(S, k)),
                             big = F("big"),
                             mid = F("mid"),
+                            // 기존 섹터 규칙(지수업종 중분류 → 대분류) = KRX업종
                             sector =
                                 if mid <> "" and mid <> "0000" and IdxName(S[prefix] & mid) <> null then IdxName(S[prefix] & mid)
                                 else if big <> "" and big <> "0000" then IdxName(S[prefix] & big)
@@ -57,8 +78,7 @@ let
                                 종목명 = Text.Trim(Text.Middle(p1, 21)),
                                 시장 = market,
                                 종류 = F("grp"),
-                                섹터 = if sector = null then "기타" else sector,
-                                대분류 = if big = "" or big = "0000" then null else IdxName(S[prefix] & big),
+                                KRX업종 = if sector = null then "기타" else sector,
                                 규모 = let z = F("size") in if z = "1" then "대형" else if z = "2" then "중형" else if z = "3" then "소형" else "미분류",
                                 지수편입 = if market = "KOSPI" then (if idxflag <> "" and idxflag <> "0" then "KOSPI200" else null)
                                           else (if idxflag = "Y" then "KOSDAQ150" else null),
@@ -96,24 +116,26 @@ let
                     if [단기과열] = "Y" then "단기과열" else null,
                     if [SPAC] = "Y" then "SPAC" else null,
                     if [우선주] = "Y" then "우선주" else null}), ","), type text),
-            Eligible = Table.AddColumn(WithFlag, "대회편입", each
-                if [SPAC] = "Y" or [거래정지] = "Y" or [정리매매] = "Y" then "N" else "Y", type text),
-            // 앞 14개 열은 [종목DB] 검색 결과와 같은 순서 (열 너비 공유)
-            Final = Table.SelectColumns(Eligible, {"종목코드", "종목명", "시장", "섹터", "규모", "지수편입", "유의사항", "대회편입",
-                "기준가", "시가총액억", "매출액억", "영업이익억", "영업이익률", "ROE", "재무기준", "상장일", "상장주식수", "대분류",
-                "우선주", "SPAC", "거래정지", "관리종목", "시장경고", "종류"}),
-            Typed = Table.TransformColumnTypes(Final, {
-                {"종목코드", type text}, {"종목명", type text}, {"시장", type text}, {"섹터", type text}, {"대분류", type text},
-                {"규모", type text}, {"지수편입", type text}, {"기준가", type number}, {"시가총액억", type number},
-                {"상장주식수", type number}, {"매출액억", type number}, {"영업이익억", type number}, {"영업이익률", type number},
-                {"ROE", type number}, {"재무기준", type text}, {"상장일", type date}, {"우선주", type text}, {"SPAC", type text},
-                {"거래정지", type text}, {"관리종목", type text}, {"시장경고", type text}, {"유의사항", type text},
-                {"대회편입", type text}, {"종류", type text}}),
-            Sorted = Table.Sort(Typed, {{"시가총액억", Order.Descending}})
+            // 마스터 파일 순서 — 조인은 행 순서를 보장하지 않으므로 마지막 정렬의 동점 처리에 씀
+            Indexed = Table.AddIndexColumn(WithFlag, "__ord", 0, 1, Int64.Type),
+
+            // 분류·대회편입 (종목코드당 1행, 형식 밖 코드는 빠짐 → 종목코드로 다시 붙임)
+            Cls = Table.Buffer(fnClassify(Table.SelectColumns(Indexed, {"종목코드", "KRX업종"}))),
+            Joined = Table.NestedJoin(Indexed, {"종목코드"}, Cls, {"종목코드"}, "c", JoinKind.LeftOuter),
+            Expanded = Table.ExpandTableColumn(Joined, "c",
+                {"대회편입", "대회비고", "NICS 대분류", "NICS 업종", "NICS 세부", "대테마", "세부테마", "분류출처", "섹터"},
+                {"__mem", "대회비고", "대분류", "NICS 업종", "NICS 세부", "대테마", "세부테마", "분류출처", "__sec"}),
+            Filled = Table.AddColumn(Table.AddColumn(Expanded,
+                        "대회편입", each if [__mem] = "Y" then "Y" else "N", type text),
+                        "섹터", each if [__sec] <> null then [__sec] else [KRX업종], type text),
+            Final = Table.SelectColumns(Filled, Cols & {"__ord"}),
+            Typed = Table.TransformColumnTypes(Final, Types),
+            Sorted = Table.RemoveColumns(Table.Sort(Typed, {{"시가총액억", Order.Descending}, {"__ord", Order.Ascending}}), {"__ord"})
         in
             Sorted,
-    // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지
+    // 실패(네트워크 등) 시 오류 대화상자 대신 직전 결과를 유지. 직전 표를 다시 읽으면 열 형식이 없어(any) Excel이 날짜 칸
+    // 서식을 '일반'으로 바꾸므로 같은 형식을 다시 지정(값은 그대로)
     Tried = try Table.Buffer(Main),
-    Final = if Tried[HasError] then fnFallback("tblUniverse", {"종목코드", "종목명", "시장", "섹터", "규모", "지수편입", "유의사항", "대회편입", "기준가", "시가총액억", "매출액억", "영업이익억", "영업이익률", "ROE", "재무기준", "상장일", "상장주식수", "대분류", "우선주", "SPAC", "거래정지", "관리종목", "시장경고", "종류"}, Tried[Error][Message]) else Tried[Value]
+    Final = if Tried[HasError] then Table.TransformColumnTypes(fnFallback("tblUniverse", Cols, Tried[Error][Message]), Types) else Tried[Value]
 in
     Final
