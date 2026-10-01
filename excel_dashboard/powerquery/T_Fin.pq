@@ -64,6 +64,9 @@
 //      "이전 데이터" 상태는 OK로 되돌린다(자료 자체는 유효 — 단계 판정이 계속 실패로 보지 않도록). 결산년월이 빈 행은
 //      원래 '데이터 없음'이었는지 '오류'였는지 알 수 없으므로 그 종목은 다시 조회한다(종목당 2회).
 //    · 지금 시각 = tblRunCtl now_override(시험 전용)가 있으면 그 값, 없으면 DateTime.LocalNow(). 주간 판정과 조회시각에 쓴다.
+//    · 같은 [전체] 실행 안에서 다시 평가되면(자기 표 tblFin의 가장 늦은 조회시각이 tblRunCtl started 이후) 조회하지 않고 자기 표를
+//      돌려준다 — 새로 고침 직후 Excel의 백그라운드 재평가가 force_weekly·오류 재시도 종목을 또 조회하는 것을 막음(아래 Main 주석).
+//      started가 비었거나 now_override를 쓰는 시험(조회시각이 시험 시각이라 비교가 맞지 않음)에서는 확인하지 않는다.
 //  설정(tblSettings, 없으면 기본값): weekly_days 7, force_weekly N, fin_lag_q 45, fin_lag_y 90
 //    (공개기준일 설정을 바꾸면 그 종목을 다음에 조회할 때 반영 — 바로 모두 반영하려면 force_weekly = Y로 [전체]).
 let
@@ -240,8 +243,19 @@ let
                 in
                     if Touched >= 0 then List.Buffer(Result) else {},
 
+            // ---------------------------------------------------------------- 같은 버튼 실행 안의 재평가 확인
+            // 새로 고침 직후 Excel이 쿼리를 백그라운드에서 한 번 더 평가할 때(아래 Main 주석) 이번 실행에서 이미 조회했으면 조회하지 않고
+            // 자기 표를 돌려준다: 자기 표(tblFin — Seed는 보지 않음)의 가장 늦은 조회시각이 이번 실행의 started(버튼 매크로가 씀) 이후면
+            // 이미 조회한 것. started가 비었거나 now_override가 있으면 확인하지 않는다.
+            Started = try DateTimeOrNull(CtlValue("started")) otherwise null,
+            OwnLast = if PrevTable = null then null
+                      else List.Max(List.RemoveNulls(List.Transform(Table.Column(PrevTable, "조회시각"),
+                               (v) => try DateTimeOrNull(v) otherwise null))),
+            Surveyed = NowOverride = null and Started <> null and OwnLast <> null and OwnLast >= Started,
+
             // ---------------------------------------------------------------- 저장소 갱신(full)
-            Full =
+            // 함수로 두어 full이고 이번 실행에서 아직 조회하지 않았을 때만 부른다(함수 값은 평가해도 호출하지 않음)
+            Survey = () as table =>
                 let
                     Targets = List.Buffer(List.Distinct(List.RemoveNulls(List.Transform(fnPageRows()[종목코드], Code)))),
                     Grouped = Table.Group(Table.FromRecords(StoreRows, Cols, MissingField.UseNull), {"종목코드"},
@@ -299,7 +313,13 @@ let
             // ---------------------------------------------------------------- full이 아닌 모드: 호출 없이 직전 표(→ Seed → 빈 표)
             Passive = ToTable(StoreRows)
         in
-            if Mode = "full" then Full else Passive,
+            // Excel은 새로 고침이 끝난 직후 쿼리를 백그라운드에서 한 번 더 평가한다(2026-10-01 하네스 + 모의 서버 실측, 동기·백그라운드
+            // 새로 고침 모두). 이 평가는 방금 적재한 자기 표를 다시 읽으므로 주간 규칙상 조회할 종목이 없으면 호출이 없지만,
+            // force_weekly = Y(모든 종목)나 오류 재시도 종목은 Power Query 캐시에 없는 요청을 한 번 더 보냈다 → Surveyed 확인으로 막는다.
+            // (조회한 종목이 모두 실패해 직전 표로 돌아간 경우엔 조회시각이 그대로라 막지 못하고 한 번 더 시도한다.)
+            // 표를 처음 적재한 뒤·통합문서를 연 뒤 처음 하는 새로 고침에서는 추가 평가가 자기 표가 갱신되기 전에 함께 돌아 이 확인을 통과하므로
+            // 그 한 번은 호출이 최대 2배가 될 수 있다(실측) — 버튼 매크로가 그 표를 build 모드로 먼저 한 번 새로 고침해 두면 생기지 않는다.
+            if Mode = "full" and not Surveyed then Survey() else Passive,
     // 실패(전 종목 조회 실패·토큰·네트워크·대상 종목 오류 등) 시 직전 표를 유지. 직전 표를 다시 읽으면 열 형식이 없어
     // 날짜가 일련번호로 보이므로 같은 형식을 다시 지정
     Tried = try Table.Buffer(Main),

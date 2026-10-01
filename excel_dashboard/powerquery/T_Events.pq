@@ -2,6 +2,9 @@
 //  - 대상 종목 = fnPageRows()(대회 종목 ∪ 보유·관심, 수정표 반영). 기간 = 오늘 − event_days_back(7) ~ 오늘 + event_days_ahead(60).
 //  - 실행 모드(tblRunCtl mode): full([전체])만 KIS를 호출한다. 그 밖(quick·sector·analysis·build·빈칸·알 수 없는 값)은 호출 없이
 //    자기 표(tblEvents) → 없거나 비었으면 정적 tblEventsSeed → 없으면 열만 있는 빈 표를 돌려준다(D-day만 오늘 기준으로 다시 계산).
+//  - 같은 [전체] 실행 안에서 다시 평가되면(자기 표의 가장 늦은 조회시각이 tblRunCtl started 이후) 조회하지 않고 위 호출 없는 경로로
+//    자기 표를 돌려준다 — 새로 고침 직후 Excel의 백그라운드 재평가가 6개 API를 또 조회하는 것을 막음(아래 Main 주석). started가 비면
+//    확인 안 함. 결과가 0행이면(기간 안 이벤트·오류 행이 하나도 없음) 조회시각이 남지 않아 막지 못한다.
 //  - 열: 일자, D-day(일자 − 오늘, 지난 이벤트는 음수), 종목코드, 종목명, 종류, 상세, 보유(Y/빈칸), 상태, 조회시각.
 //    정렬 = 일자 ↑, 종목코드 ↑. 같은 종목코드·일자·종류·상세는 1건. 종목명 = 대회 명단(tblContest) → 종목DB(tblUniverse) → 응답 이름.
 //    보유 = fnPageRows 구분이 보유 또는 보유·관심일 때 Y. 값이 없으면 빈칸(0 아님).
@@ -42,7 +45,7 @@
 //    대상 종목이 하나도 없으면 호출 없이 빈 표(0행).
 //  호출 수(2026-10-01 실측, 대회 527종목 + 샘플 보유·관심 18종목): 상장정보 1 + 유상증자 1 + 무상증자 1 + 합병·분할 1 + 배당 3 + 주주총회 50 + 보유·관심 개별 18 = 75회,
 //    소요 20~40초(쪽당 0.3~0.5초). 주주총회가 대부분 — 상장정보는 기간 행이 75개를 넘으면 2쪽이 됨.
-//  점검: Online의 Diag 단계가 API별 쪽 수·원천 행·이벤트 수·비고를 표로 만든다(출력에는 안 나옴).
+//  점검: Online()의 Diag 필드가 API별 쪽 수·원천 행·이벤트 수·비고를 표로 만든다(출력에는 안 나옴 — 보려면 Main을 Online()[Diag]로).
 let
     Cols = {"일자", "D-day", "종목코드", "종목명", "종류", "상세", "보유", "상태", "조회시각"},
     Types = {{"일자", type date}, {"D-day", Int64.Type}, {"종목코드", type text}, {"종목명", type text}, {"종류", type text},
@@ -85,15 +88,33 @@ let
         in if n = null or n < 0 then dflt else Number.RoundDown(n),
     Back = IntSetting("event_days_back", 7),
     Ahead = IntSetting("event_days_ahead", 60),
+    // 실행 제어 tblRunCtl(키, 값): mode, started(버튼 실행 시작 시각 — 매크로가 씀)
     RunCtl = try Excel.CurrentWorkbook(){[Name = "tblRunCtl"]}[Content] otherwise null,
-    ModeRaw =
+    RunValue = (key as text) as any =>
         if RunCtl = null or not List.ContainsAll(Table.ColumnNames(RunCtl), {"키", "값"}) then null
         else
-            let m = Table.SelectRows(RunCtl, each [키] <> null and (try Text.Lower(Text.Trim(Text.From([키]))) = "mode" otherwise false))
+            let m = Table.SelectRows(RunCtl, each [키] <> null and (try Text.Lower(Text.Trim(Text.From([키]))) = key otherwise false))
             in if Table.RowCount(m) = 0 then null else m{0}[값],
+    ModeRaw = RunValue("mode"),
     Mode =
         let t = if ModeRaw = null then "" else try Text.Lower(Text.Trim(Text.From(ModeRaw))) otherwise ""
         in if List.Contains({"quick", "full", "sector", "analysis"}, t) then t else "build",
+
+    // 같은 버튼 실행 안에서 다시 평가될 때(새로 고침 직후 Excel이 쿼리를 백그라운드에서 한 번 더 평가함 — 아래 Main 주석)는
+    // 조회하지 않고 방금 적재한 자기 표를 돌려준다: 자기 표의 가장 늦은 조회시각이 이번 실행의 started 이후면 이미 조회한 것.
+    // started가 비어 있으면(하네스 시험 등) 이 확인은 하지 않는다. 셀 값은 일시·날짜·일련번호·텍스트로 올 수 있다(변환 실패는 빈칸).
+    Stamp = (v as any) as nullable datetime =>
+        if v = null then null
+        else if v is datetime then v
+        else if v is date then DateTime.From(v)
+        else if v is number then (try DateTime.From(v) otherwise null)
+        else if v is text then (try DateTime.FromText(Text.Trim(v), "en-US") otherwise null)
+        else null,
+    Started = try Stamp(RunValue("started")) otherwise null,
+    OwnTable = try Excel.CurrentWorkbook(){[Name = "tblEvents"]}[Content] otherwise null,
+    LastStamp = if OwnTable = null or not Table.HasColumns(OwnTable, "조회시각") then null
+                else List.Max(List.RemoveNulls(List.Transform(Table.Column(OwnTable, "조회시각"), (v) => try Stamp(v) otherwise null))),
+    Surveyed = Started <> null and LastStamp <> null and LastStamp >= Started,
 
     // ---- 호출 없는 경로(full 외): 직전 표 → 시드 → 빈 표. D-day만 오늘 기준으로 다시 계산
     Offline =
@@ -116,8 +137,9 @@ let
         in
             Re,
 
-    // ---- 호출 경로(full)
-    Online =
+    // ---- 호출 경로(full) — 함수로 두어 full이고 이번 실행에서 아직 조회하지 않았을 때만 부른다(함수 값은 평가해도 호출하지 않음).
+    //      돌려주는 레코드: [Events = 표, Diag = 점검 표] — 점검할 때는 Online()[Diag]
+    Online = () as record =>
         let
             WStart = Date.AddDays(Today, -Back),
             WEnd = Date.AddDays(Today, Ahead),
@@ -420,7 +442,15 @@ let
         in
             if List.Count(PageCodes) = 0 then [Events = Empty, Diag = null] else [Events = Events, Diag = Diag],
 
-    Main = if Mode <> "full" then Offline else Online[Events],
+    // Excel은 새로 고침이 끝난 직후 쿼리를 백그라운드에서 한 번 더 평가하고, 최상위 단계도 따로 평가한다(2026-10-01 하네스 +
+    // 모의 서버 실측, 동기·백그라운드 새로 고침 모두). 이 평가는 Power Query 캐시에 없는 요청을 서버로 그대로 보낸다.
+    //  ① 조회를 값으로 된 단계로 두었을 때는 표를 처음 적재하는 새로 고침이 build 모드여도 그 단계를 평가해 6개 API를 모두 조회했다
+    //     → 조회는 함수(Online)로 두고 full일 때만 부른다(함수 값인 단계는 평가해도 호출하지 않음).
+    //  ② full 새로 고침 뒤에는 같은 쪽 요청이 한 번 더 나갔다(호출 2배) → 위 Surveyed 확인으로 막는다.
+    //     (6개 API가 모두 실패해 직전 표로 돌아간 경우엔 조회시각이 그대로라 막지 못하고 한 번 더 시도한다.)
+    //  ③ 표를 처음 적재한 뒤·통합문서를 연 뒤 처음 하는 새로 고침에서는 추가 평가가 자기 표가 갱신되기 전에 함께 돌아 ②의 확인을
+    //     통과하므로 그 한 번은 호출이 최대 2배가 될 수 있다(실측). 버튼 매크로가 그 표를 build 모드로 먼저 한 번 새로 고침해 두면 생기지 않는다.
+    Main = if Mode = "full" and not Surveyed then Online()[Events] else Offline,
     // 실패(토큰·네트워크·호출제한·6개 API 모두 실패 등) 시 오류 대화상자 대신 직전 결과를 유지.
     // 직전 표를 Excel에서 다시 읽으면 열 형식이 없어(any) 날짜 서식이 일반으로 바뀌므로 같은 형식을 다시 지정함 — 값은 그대로
     Tried = try Table.Buffer(Main),

@@ -39,6 +39,8 @@
 //    이전 데이터(갱신 실패: 사유)(fnFallback — 조회한 종목이 전부 실패해 표 전체를 직전 값으로 유지).
 //  - 종목별 실패(API 오류·네트워크)는 그 종목 행만 `오류: <사유>`로 하고 직전 값은 그대로 둔다. 조회를 시도한 종목이 하나 이상인데 사용할 수 있는 행
 //    (OK·데이터 없음)이 하나도 없으면 오류로 올려 fnFallback이 직전 표를 유지하게 한다. 빈값은 빈칸(0으로 채우지 않음).
+//  - 같은 [전체] 실행 안에서 다시 평가되면(자기 표 tblCSL의 가장 늦은 조회시각이 tblRunCtl started 이후) 조회하지 않고 자기 표를 돌려준다
+//    — 새로 고침 직후 Excel의 백그라운드 재평가가 force_weekly·오류 재시도 종목을 또 조회하는 것을 막음(아래 Out 주석). started가 비면 확인 안 함.
 let
     Cols = {"종목코드", "기준일", "신용잔고율", "신용잔고율1M변화", "공매도비중5일", "대차잔고1M변화율", "상태", "조회시각"},
     Types = {{"종목코드", type text}, {"기준일", type date}, {"신용잔고율", type number}, {"신용잔고율1M변화", type number},
@@ -64,13 +66,14 @@ let
             SafeDate = (v as any) as nullable date => try Date.From(v) otherwise null,
             SafeDt = (v as any) as nullable datetime => try DateTime.From(v) otherwise null,
 
-            // 실행 모드: 값이 없거나 알 수 없으면 build. 호출은 full에서만
+            // 실행 제어 tblRunCtl(키, 값): mode — 값이 없거나 알 수 없으면 build, 호출은 full에서만. started — 버튼 실행 시작 시각(매크로가 씀)
             RunCtl = try Excel.CurrentWorkbook(){[Name = "tblRunCtl"]}[Content] otherwise null,
-            ModeTxt =
+            CtlValue = (key as text) as any =>
                 if RunCtl = null or not Table.HasColumns(RunCtl, {"키", "값"}) then null
                 else
-                    let hit = Table.SelectRows(RunCtl, each (let k = SafeTxt([키]) in k <> null and Text.Lower(k) = "mode"))
-                    in if Table.RowCount(hit) = 0 then null else SafeTxt(hit{0}[값]),
+                    let hit = Table.SelectRows(RunCtl, each (let k = SafeTxt([키]) in k <> null and Text.Lower(k) = key))
+                    in if Table.RowCount(hit) = 0 then null else hit{0}[값],
+            ModeTxt = SafeTxt(CtlValue("mode")),
             Mode = if ModeTxt = null then "build" else Text.Lower(ModeTxt),
 
             // 설정(없으면 기본값): weekly_days 7, force_weekly N
@@ -96,6 +99,10 @@ let
                     each _[code] <> null),
             OwnRows = AsPrev(Own),
             PrevRows = if List.Count(OwnRows) > 0 then OwnRows else AsPrev(Seed),
+            // 같은 버튼 실행 안의 재평가 확인: 자기 표(Seed는 보지 않음)의 가장 늦은 조회시각이 이번 실행의 started 이후면 이미 조회한 것
+            Started = SafeDt(CtlValue("started")),
+            OwnLast = List.Max(List.RemoveNulls(List.Transform(OwnRows, each _[ts]))),
+            Surveyed = Started <> null and OwnLast <> null and OwnLast >= Started,
             // 같은 종목코드가 여러 행이면 처음 행(Record.FromList는 이름이 겹치면 오류라서 하나씩 더함)
             PrevByCode = List.Accumulate(PrevRows, [], (st, r) => if Record.HasFields(st, r[code]) then st else Record.AddField(st, r[code], r)),
             PrevList = List.Transform(Record.FieldNames(PrevByCode), each Record.Field(PrevByCode, _)),
@@ -181,34 +188,44 @@ let
                     else if List.Count(Forced) < 0 then null
                     else Row,
 
-            // 대상 종목과 그 종목의 조회 계획·결과. 조회 결과(r)는 필요한 종목만, 종목마다 한 번만 평가된다(버퍼로 고정된 레코드의 필드는 처음 읽을 때 한 번 평가)
-            Codes = List.Buffer(List.Distinct(List.RemoveNulls(List.Transform(fnPageRows()[종목코드],
-                        each let t = SafeTxt(_) in if t = null then null else Text.Upper(t))))),
-            Plan = List.Buffer(List.Transform(Codes, (c) =>
-                let p = Record.FieldOrDefault(PrevByCode, c, null), nd = NeedsFetch(p)
-                in [code = c, prev = p, need = nd, r = if nd then try Fetch(c) else null])),
-            RowOf = (x as record) as list =>
+            // full: 대상 종목과 그 종목의 조회 계획·결과 → 새 표. 함수로 두어 full이고 이번 실행에서 아직 조회하지 않았을 때만 부른다(함수 값은
+            // 평가해도 호출하지 않음). 조회 결과(r)는 필요한 종목만, 종목마다 한 번만 평가된다(버퍼로 고정된 레코드의 필드는 처음 읽을 때 한 번 평가)
+            Survey = () as table =>
                 let
-                    c = x[code],
-                    p = x[prev],
-                    PV = (k as text) as any => if p = null then null else Record.Field(p, k),
-                    f = x[r]
+                    Codes = List.Buffer(List.Distinct(List.RemoveNulls(List.Transform(fnPageRows()[종목코드],
+                                each let t = SafeTxt(_) in if t = null then null else Text.Upper(t))))),
+                    Plan = List.Buffer(List.Transform(Codes, (c) =>
+                        let p = Record.FieldOrDefault(PrevByCode, c, null), nd = NeedsFetch(p)
+                        in [code = c, prev = p, need = nd, r = if nd then try Fetch(c) else null])),
+                    RowOf = (x as record) as list =>
+                        let
+                            c = x[code],
+                            p = x[prev],
+                            PV = (k as text) as any => if p = null then null else Record.Field(p, k),
+                            f = x[r]
+                        in
+                            if not x[need] then {c, PV("asof"), PV("credit"), PV("chg"), PV("short"), PV("loan"), PV("status"), PV("ts")}
+                            else if f[HasError] then
+                                {c, PV("asof"), PV("credit"), PV("chg"), PV("short"), PV("loan"), "오류: " & Text.Start(Reason(f[Error]), 120), PV("ts")}
+                            else
+                                let v = f[Value] in {c, v[asof], v[credit], v[chg], v[short], v[loan], v[status], Now},
+                    Rows = List.Buffer(List.Transform(Plan, RowOf)),
+                    Attempted = List.Count(List.Select(Plan, each _[need])),
+                    FailedPlan = List.Select(Plan, each _[need] and _[r][HasError]),
+                    Usable = List.Count(List.Select(Rows, each Healthy(_{6}))),
+                    // 조회한 종목이 하나 이상인데 쓸 수 있는 행이 없으면(모두 실패) 오류로 올려 직전 표를 유지(fnFallback)
+                    Checked = if Attempted > 0 and Usable = 0 and List.Count(FailedPlan) > 0 then error Reason(FailedPlan{0}[r][Error]) else Rows
                 in
-                    if not x[need] then {c, PV("asof"), PV("credit"), PV("chg"), PV("short"), PV("loan"), PV("status"), PV("ts")}
-                    else if f[HasError] then
-                        {c, PV("asof"), PV("credit"), PV("chg"), PV("short"), PV("loan"), "오류: " & Text.Start(Reason(f[Error]), 120), PV("ts")}
-                    else
-                        let v = f[Value] in {c, v[asof], v[credit], v[chg], v[short], v[loan], v[status], Now},
-            Rows = List.Buffer(List.Transform(Plan, RowOf)),
-            Attempted = List.Count(List.Select(Plan, each _[need])),
-            FailedPlan = List.Select(Plan, each _[need] and _[r][HasError]),
-            Usable = List.Count(List.Select(Rows, each Healthy(_{6}))),
-            // 조회한 종목이 하나 이상인데 쓸 수 있는 행이 없으면(모두 실패) 오류로 올려 직전 표를 유지(fnFallback)
-            Checked = if Attempted > 0 and Usable = 0 and List.Count(FailedPlan) > 0 then error Reason(FailedPlan{0}[r][Error]) else Rows,
+                    #table(Schema, Checked),
 
-            FullOut = #table(Schema, Checked),
             PrevOut = #table(Schema, List.Transform(PrevList, (p) => {p[code], p[asof], p[credit], p[chg], p[short], p[loan], p[status], p[ts]})),
-            Out = if Mode = "full" then FullOut else PrevOut
+            // Excel은 새로 고침이 끝난 직후 쿼리를 백그라운드에서 한 번 더 평가한다(2026-10-01 하네스 + 모의 서버 실측, 동기·백그라운드 새로 고침
+            // 모두). 이 평가는 방금 적재한 자기 표를 다시 읽으므로 주간 규칙상 조회할 종목이 없으면 호출이 없지만, force_weekly = Y(모든 종목)나
+            // 오류 재시도 종목은 Power Query 캐시에 없는 요청을 한 번 더 보냈다 → 위 Surveyed 확인으로 막는다.
+            // (조회한 종목이 모두 실패해 직전 표로 돌아간 경우엔 조회시각이 그대로라 막지 못하고 한 번 더 시도한다.)
+            // 표를 처음 적재한 뒤·통합문서를 연 뒤 처음 하는 새로 고침에서는 추가 평가가 자기 표가 갱신되기 전에 함께 돌아 이 확인을 통과하므로
+            // 그 한 번은 호출이 최대 2배가 될 수 있다(실측) — 버튼 매크로가 그 표를 build 모드로 먼저 한 번 새로 고침해 두면 생기지 않는다.
+            Out = if Mode = "full" and not Surveyed then Survey() else PrevOut
         in
             Table.TransformColumnTypes(Out, Types),
     // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지.
