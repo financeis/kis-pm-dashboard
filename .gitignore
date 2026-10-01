@@ -176,3 +176,9 @@ backtester/examples/output/*.py
 settings.local.json
 
 .serena/
+# ===== dryforge 작업 문서 =====
+.dryforge/
+
+# ===== 사용자 입력 자료 (excel_dashboard가 읽기만 함, 커밋 금지) =====
+/2025072910034185K_02_01.pdf
+/수집기업_valuesearch.xlsx
