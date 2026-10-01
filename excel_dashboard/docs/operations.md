@@ -17,7 +17,7 @@ python excel_dashboard/build_dashboard.py --no-migrate [--empty] # 이관 없이
 python excel_dashboard/build_dashboard.py --cfg <yaml> --visible # 설정 파일 경로 바꾸기 / Excel 보이게
 ```
 
-- 약 7.5~8분(쿼리 77개 추가에만 1.5~2분). 순서: 원본 선택 → `backup/<이름>_<시각>.<확장자>` 복사 → 파일 파싱 이관 계획 → 토큰 남은 시간 확인 → AccessVBOM 켜고 Excel 시작 → 생성·build 모드 새로 고침 → VBA 삽입 → `.xlsm` 저장 → Excel 종료·AccessVBOM 복원 → 행 수 대조 로그 → `.xlsx` 원본이었으면 백업 폴더로 이동.
+- 약 7.5~9분(쿼리 77개 추가에만 1.5~2분). 순서: 원본 선택 → `backup/<이름>_<시각>.<확장자>` 복사 → 파일 파싱 이관 계획 → 토큰 남은 시간 확인 → AccessVBOM 켜고 Excel 시작 → 생성·build 모드 새로 고침 → VBA 삽입 → `.xlsm` 저장 → Excel 종료·AccessVBOM 복원 → 행 수 대조 로그 → `.xlsx` 원본이었으면 백업 폴더로 이동.
 - 종료 코드: 0 성공 / 1 빌드 실패(원본·기존 파일 그대로, 임시 폴더 정리) / 2 원천 토큰 남은 시간 210분 미만(Excel 미기동) / 3 이관·설정 문제(원본 없음·손상, Excel 미기동).
 - 로그: `backup/<이름>_<시각>_build.log`. 확인할 줄: 표별 `원본 → 새` 행 수, `tblToken 이관(남은 N분) → 상태 '재사용'`, `AccessVBOM 원래 상태로 복원 확인: …`, 경고.
 - 빌드하는 동안 그 통합문서를 Excel로 열어 두지 않는다(저장·이동 실패). 사용자가 열어 둔 다른 Excel 창은 건드리지 않는다.

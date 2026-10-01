@@ -3,7 +3,7 @@
 
 순서 (모두 **복사본·스크래치 폴더**에서 — 사용자 통합문서는 읽기만 함)
 1. 원본(.xlsm)을 작업 폴더로 복사 → 자기 Excel로 열어(토큰 관문) 사용자 데이터를 넣는다:
-   매매일지 1행(전략 'V7시험'), 관심종목 1행(대회 종목이 아닌 코드), 설정값 변경(max_weight), 수정표 2행(테마 변경·대회편입 추가),
+   매매일지 1행(전략 '이관시험'), 관심종목 1행(대회 종목이 아닌 코드), 설정값 변경(max_weight), 수정표 2행(테마 변경·대회편입 추가),
    스냅샷(tblEstSnap) 한 칸에 표시값(FwdPER = 12.3456), 사용자 추가 시트 '내 메모'.
    그리고 **.xlsx로 다른 이름 저장**(VBA 없는 형식) → 빌드의 기본 이관 원본 규칙(출력 위치에 .xlsm이 없으면 같은 이름 .xlsx)을 시험.
 2. `build_dashboard.py --out <작업 폴더>/KIS_PM_Dashboard.xlsm`(이관 원본 자동 선택)을 실행하고 종료 코드·로그·시간을 기록.
@@ -89,7 +89,7 @@ def prepare(src: str, xlsx_out: str, token_source: str) -> dict:
         out_code = sorted(str(c) for c in outside if c)[len(outside) // 2]
         exp["outside_code"] = out_code
         add_row(find_table(wb, "tblTrades"), {"일자": dt.date(2026, 9, 30), "종목코드": "000270", "구분": "매수", "수량": 5,
-                                              "단가": 100000, "전략": "V7시험", "매매근거": "이관 왕복 시험 행"})
+                                              "단가": 100000, "전략": "이관시험", "매매근거": "이관 왕복 시험 행"})
         add_row(find_table(wb, "tblWatch"), {"종목코드": out_code, "그룹": "이관시험", "투자포인트": "이관 왕복 시험(유니버스 밖)"})
         st = find_table(wb, "tblSettings")
         h = [str(x) for x in st.HeaderRowRange.Value2[0]]
@@ -99,7 +99,7 @@ def prepare(src: str, xlsx_out: str, token_source: str) -> dict:
                 row.Cells(1, h.index("값") + 1).Value2 = 0.25
         exp["max_weight"] = 0.25
         ov = find_table(wb, "tblOverride")
-        add_row(ov, {"종목코드": "005380", "대테마": "V7테마", "세부테마": "V7세부", "메모": "테마 변경 시험"})
+        add_row(ov, {"종목코드": "005380", "대테마": "이관테마", "세부테마": "이관세부", "메모": "테마 변경 시험"})
         add_row(ov, {"종목코드": out_code, "대회편입": "추가", "메모": "대회편입 추가 시험"})
         snap = find_table(wb, "tblEstSnap")
         if snap is not None and snap.ListRows.Count > 0 and snap.DataBodyRange is not None:
@@ -177,7 +177,7 @@ def main() -> int:
                 return [dict(zip(c, x)) for x in r if any(v not in (None, "") for v in x)]
             tr = recs("tblTrades")
             checks["trades_rows"] = (len(tr), exp["trades"])
-            checks["trade_row"] = any(r.get("전략") == "V7시험" and r.get("종목코드") == "000270" for r in tr)
+            checks["trade_row"] = any(r.get("전략") == "이관시험" and r.get("종목코드") == "000270" for r in tr)
             wa = recs("tblWatch")
             checks["watch_rows"] = (len(wa), exp["watch"])
             checks["watch_row"] = any(r.get("종목코드") == exp["outside_code"] and r.get("그룹") == "이관시험" for r in wa)
@@ -193,7 +193,7 @@ def main() -> int:
             checks["user_sheet_absent"] = USER_SHEET not in sheets
             # 이관 직후 build 모드 새로 고침으로 대회종목·종목DB에도 반영됐는지(수정표 효과)
             co = recs("tblCompany")
-            checks["override_theme_applied"] = any(r.get("종목코드") == "005380" and r.get("대테마") == "V7테마" for r in co)
+            checks["override_theme_applied"] = any(r.get("종목코드") == "005380" and r.get("대테마") == "이관테마" for r in co)
             checks["override_add_applied"] = any(r.get("종목코드") == exp["outside_code"] and r.get("유니버스") == "대회" for r in co)
     res["checks"] = checks
 

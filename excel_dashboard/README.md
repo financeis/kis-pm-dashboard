@@ -42,7 +42,7 @@ python excel_dashboard/build_dashboard.py --no-migrate --empty # 빈 매매일�
 python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 파일 경로 지정(--visible: Excel 보이게)
 ```
 
-- 걸리는 시간 약 7.5~8분. 별도의 숨김 Excel 인스턴스로 작업하고, 열려 있는 다른 Excel 창은 건드리지 않습니다.
+- 걸리는 시간 약 7.5~9분. 별도의 숨김 Excel 인스턴스로 작업하고, 열려 있는 다른 Excel 창은 건드리지 않습니다.
 - **빌드 전에 원본을 `backup/<이름>_YYYYMMDD_HHMMSS.<확장자>`로 복사**하고, 빌드 로그도 `backup/`에 남깁니다. 원본이 `.xlsx`였고 이관이 성공하면 그 `.xlsx`는 백업 폴더로 옮겨 집니다(살아 있는 통합문서는 `.xlsm` 하나).
 - **이관되는 것**: 매매일지 전체, 관심종목, 설정(키별 — 쓰시던 값 유지, 새 키는 기본값 추가), 해외지수 목록, 휴장일, 수정표, 가격 이력·세션 달력·분기 실적·신용/공매도/대차·Fwd EPS 스냅샷(있으면), 유효한 접근토큰. 기존 통합문서는 **Excel로 열지 않고 파일을 직접 읽어** 옮깁니다(열면 토큰 확인이 돌아 새 토큰이 발급될 수 있음). 스냅샷이 통합문서에 없으면 `history/est_snap.csv`에서 복원합니다.
 - 목록에 없는 사용자 추가 시트는 경고만 하고 옮기지 않습니다(백업본에 남음).
