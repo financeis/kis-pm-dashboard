@@ -1,7 +1,7 @@
 # KIS PM 일일 대시보드 (excel_dashboard)
 
 한국투자증권(KIS) Open API 위에 만든 **개인용 주식 운용 대시보드**다. Excel(Microsoft 365 한국어판) + Power Query가 KIS REST를 직접 조회하고, 파이썬 빌더가 Excel COM으로 `KIS_PM_Dashboard.xlsm`(VBA 버튼 포함)을 생성·재생성한다. 사용자는 1명 — KOSPI·KOSDAQ 개별종목 2개월 모의투자대회(수익률·샤프 평가) 참가자로, 대회 종목 527개와 보유·관심 수십 종목을 매일 본다. 로컬 Windows PC 한 대, 조회 전용, 네트워크 서비스·다중 사용자 없음.
-이 폴더는 KIS 공식 예제 저장소 안에 있다. 저장소의 다른 폴더(`examples_llm/`, `stocks_info/` 등)는 API 사양 참고용 공식 예제다.
+이 폴더는 KIS 공식 예제 저장소 안에 있다. 저장소의 다른 폴더(`examples_llm/`, `stocks_info/` 등)는 API 사양 참고용 공식 예제다. 저장소는 개인 비공개 GitHub `financeis/kis-pm-dashboard`(원격 `origin`)로 올리고, KIS 공식 저장소(`upstream`)에는 올리지 않는다.
 
 ## 프로젝트 구조
 
@@ -21,7 +21,7 @@ excel_dashboard/
 │       ├── status.md             → 완료(검증 근거)·남은 일·막힌 것
 │       ├── decisions/
 │       │   ├── index.md          → 결정 목록
-│       │   └── 0001~0008-*.md    → 개별 결정(배경·결정·대안·결과)
+│       │   └── 0001~0009-*.md    → 개별 결정(배경·결정·대안·결과)
 │       └── findings.md           → 미해결 문제
 ├── powerquery/
 │   └── AGENTS.md                 → 쿼리 77개: 종류·모드·가드·대체 경로 불변식·시험

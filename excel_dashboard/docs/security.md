@@ -22,7 +22,7 @@
 | 주체 | 허용 | 금지 |
 |---|---|---|
 | 통합문서 쿼리 | KIS 시세·정보 GET, 마스터 zip, yaml·VALUESearch 파일 읽기, 통합문서 표 읽기 | 주문·정정·취소·계좌 API, 파일 쓰기 |
-| VBA 버튼 매크로 | `tblRunCtl`·설정 `force_weekly`·최근 조회/상태 칸 쓰기, 표 새로 고침, `history/est_snap.csv` 쓰기, 그 파일을 덮지 않을 때 `history/est_snap_yyyymmdd_hhnnss.csv` 새로 쓰기(`history` 폴더가 없으면 만듦) | 레지스트리·다른 파일 변경, `CalculateUntilAsyncQueriesDone` |
+| VBA 버튼 매크로 | `tblRunCtl`·설정 `force_weekly`·최근 조회/상태 칸 쓰기, 설정 `cfg_path`·`vs_path`를 그 PC의 표준 위치로 바꾸기(지금 경로에 파일이 없을 때만 — 파일이 있는지만 보고 내용은 읽지 않음), 표 새로 고침, `history/est_snap.csv` 쓰기, 그 파일을 덮지 않을 때 `history/est_snap_yyyymmdd_hhnnss.csv` 새로 쓰기(`history` 폴더가 없으면 만듦) | 레지스트리·다른 파일 변경, `CalculateUntilAsyncQueriesDone` |
 | 빌더 | 새 통합문서 생성, 기존 통합문서 백업·이동, AccessVBOM을 빌드 동안만 1로 | 원본을 Excel로 열기(파일 파싱만), 백업 없는 삭제·덮어쓰기, 사용자가 연 Excel 창 건드리기 |
 | 개발·검증 도구 | 조회 전용 GET(주문 경로 `/trading/`·`/uapi/` 밖 경로 거부), 토큰 원천 파일 파싱 | 토큰 발급, 토큰 원천을 Excel로 열기(검증 도구의 버튼 실행만 예외 — 아래) |
 
@@ -32,6 +32,8 @@
 - 앱키·시크릿은 통합문서에 저장하지 않는다(쿼리 정의·연결 문자열·VBA 포함). 빌드 결과물 검사(`tools/verify_security.py`)가 통합문서 모든 파트, 쿼리 원본, VBA, 이력 CSV, 빌드 로그를 검색해 확인한다.
 - 토큰은 `_sys`에만 있어야 한다. 다른 시트·쿼리·연결에 토큰 문자열이 있으면 결함이다.
 - 통합문서·`backup/`·`history/`·사용자 제공 자료는 git에서 제외한다. 통합문서를 남에게 보낼 때는 `tblToken` 내용을 지운다.
+- 푸시는 비공개 저장소 `origin`(`financeis/kis-pm-dashboard`)으로만 한다. `upstream`(KIS 공식 저장소)에는 올리지 않는다. 푸시 전에는 올라갈 커밋의 모든 파일·커밋 메시지에 실제 앱키·시크릿·계좌번호·HTS ID·토큰이 없는지 값 비교로 확인한다(값은 출력하지 않음).
+- 저장소 루트 `kis_devlp.yaml`은 공식 예제의 빈 양식으로 추적되는 파일인데, 이 PC의 작업 사본에는 실제 앱키·시크릿이 적혀 있다. `git update-index --skip-worktree kis_devlp.yaml`로 로컬 변경을 git이 무시하게 해 두었다 — 이 표시를 풀거나 이 파일을 커밋하지 않는다.
 
 ## 개발 중 토큰 규칙
 

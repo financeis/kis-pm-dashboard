@@ -21,6 +21,9 @@
 - **숫자 셀의 IndentLevel·좁은 칸** — PDF/PNG 렌더에서 IndentLevel을 준 숫자 칸과 [시장] 지수 카드 같은 16pt 숫자가 `####`로 보인다. 화면(85%·100%)에서는 정상이라 레이아웃은 바꾸지 않았다. 들여쓰기가 필요한 숫자 열은 `_)` 같은 서식으로 처리한다.
 - **VBA 소스 코드 페이지** — `CodeModule.AddFromString`은 cp949로 저장해 `—`·`✓`·`⚠`를 `?`로 바꾸고, MsgBox도 cp949를 거쳐 `—`를 깬다(창에는 U+2015로 대신 표시, 셀에는 진짜 U+2014). `.bas` 가져오기(Import)는 파일을 CP949로 읽어 한글이 깨지므로 쓰지 않는다. 새 모듈에 VBE가 자동으로 넣는 `Option Explicit` 줄은 삽입 전에 지운다.
 - **AccessVBOM 읽는 시점** — Excel은 이 값을 인스턴스 시작 때 한 번 읽는다. 켜기 전에 띄운 인스턴스는 켠 뒤에도 VBA 프로젝트에 접근하지 못하고, 켠 동안 띄운 인스턴스는 복원 뒤에도 접근한다. Excel은 종료할 때 값을 되쓰지 않는다.
+- **`Auto_Open`은 COM 자동화에서 돌지 않는다** — 표준 모듈의 `Auto_Open`은 사용자가 통합문서를 열 때만 실행되고 `Workbooks.Open`(빌더·검증 도구)으로 열면 실행되지 않는다. 그래서 다른 PC 경로 맞추기(`FixLocalPaths`)는 시험에서 `call:FixLocalPaths`로 직접 부른다. Power Query M에는 환경 변수(`USERPROFILE`)를 읽는 함수가 없어 경로 맞추기를 쿼리가 아니라 매크로에서 한다.
+- **OneDrive에서 연 통합문서의 `ThisWorkbook.Path`** — OneDrive 동기화 폴더의 파일을 Excel이 열면 `ThisWorkbook.Path`가 로컬 경로가 아니라 `https://…` 주소로 나올 수 있다(알려진 Excel 동작, 이 PC에서는 시험하지 않음). 매크로의 이력 CSV 저장(`history\`)과 `FixLocalPaths`의 VALUESearch 후보가 이 값을 쓰므로 OneDrive 대신 일반 폴더 경로로 보이는 동기화 폴더를 안내한다.
+- **인터넷 표시가 붙은 `.xlsm`** — 메일·브라우저로 받은 파일은 Office가 매크로를 막는다(버튼 무반응, 노란 줄 대신 '보안 위험' 줄). 파일 [속성] → [차단 해제]로 푼다. USB·동기화 폴더로 옮긴 파일은 보통 해당 없음.
 - **`Application.StatusBar`** — 초기화 뒤 읽으면 화면은 '준비'인데 문자열 "FALSE"가 돌아온다. 자동화 검사는 `StatusBar is False`로 판정하지 않는다.
 - **PQ 표의 `SourceType`** — 저장·다시 열기 뒤 Power Query 표는 `ListObject.SourceType = 3`으로 보고된다(0이 아님).
 - **`_data` 시트에 표 추가** — `_data!EL2`에 증시 자금 표를 두면 `tblPositions` 계산열 추가가 오른쪽 셀을 밀어 빌드가 실패했다. 버튼·새 표는 `_calc`에 45열 간격으로 둔다.

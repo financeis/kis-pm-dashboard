@@ -56,6 +56,35 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 3. **[데이터] > [모두 새로 고침]** (`Ctrl+Alt+F5`) — 약 1분 15초.
 4. **[대회종목]**의 **[전체]** — 처음 한 번은 가격 이력 260세션 등을 모두 채우느라 **약 15분**(KIS 호출 약 5,900회). 이후 평일은 4~5분.
 
+### 다른 PC(메인 컴퓨터)에서 쓰기
+
+코드는 GitHub 비공개 저장소(`financeis/kis-pm-dashboard`)에 있지만, **통합문서는 git에 올리지 않으므로**(접근토큰·매매기록이 들어 있음) 직접 옮깁니다.
+
+**A. 통합문서를 옮겨 쓰기 — Python 필요 없음(추천)**
+
+1. 노트북에서 메인 PC로 복사합니다(USB·OneDrive 등).
+   - `excel_dashboard\KIS_PM_Dashboard.xlsm`과 `excel_dashboard\history\` 폴더 → 메인 PC의 한 폴더에 함께
+   - `수집기업_valuesearch.xlsx`(저장소 루트) → 통합문서와 같은 폴더(또는 바로 위 폴더)
+   - `C:\Users\<노트북 사용자>\KIS\config\kis_devlp.yaml` → 메인 PC의 `C:\Users\<메인 사용자>\KIS\config\kis_devlp.yaml`. 앱키·시크릿이 들어 있으니 메일·클라우드 말고 USB 등으로 옮기세요.
+2. 메일·다운로드로 받은 파일이면 파일을 오른쪽 클릭 → [속성] → **[차단 해제]**에 체크합니다(안 하면 매크로가 막혀 버튼이 동작하지 않음).
+3. 통합문서를 열고 **[콘텐츠 사용]**. [설정]의 KIS 설정 파일 경로(`cfg_path`)와 VALUESearch 경로(`vs_path`)가 이 PC 위치로 자동으로 바뀝니다(위 위치에 파일이 있을 때. 버튼을 누를 때도 다시 확인). 그래도 경로 오류가 나면 [설정]에서 두 값을 직접 고칩니다.
+4. **[데이터] > [모두 새로 고침]** 뒤 버튼을 씁니다. 토큰이 3시간 미만 남았으면 이때 새로 발급됩니다(알림톡 1건).
+
+- 두 PC에서 번갈아 쓸 때는 **통합문서 하나만 원본으로** 쓰세요. 매매일지·가격 이력이 파일 안에 있어서 사본을 따로 쓰면 내용이 갈립니다. Google Drive·Dropbox처럼 드라이브 안의 일반 폴더로 보이는 동기화 폴더에 통합문서·`history\`·VALUESearch 파일을 함께 두면 어느 PC에서 열어도 같은 파일이고, 경로는 열 때마다 그 PC에 맞춰집니다. OneDrive는 피하세요 — OneDrive에서 연 파일은 Excel이 위치를 인터넷 주소로 알려 주는 경우가 있어 이력 CSV 저장과 경로 맞추기가 실패할 수 있습니다. 두 PC에서 동시에 열지는 마세요(충돌 사본이 생김).
+
+**B. 메인 PC에서 다시 만들기 — 코드를 고치거나 새로 만들 때만**
+
+```powershell
+git clone https://github.com/financeis/kis-pm-dashboard.git   # 비공개 저장소: 처음에 GitHub 로그인 창이 뜸
+cd kis-pm-dashboard
+pip install pywin32 pyyaml requests
+# 노트북의 KIS_PM_Dashboard.xlsm(+ history\)을 excel_dashboard\에, 수집기업_valuesearch.xlsx를 저장소 루트에 복사한 뒤
+python excel_dashboard/build_dashboard.py
+```
+
+- 이관 원본의 설정 파일·VALUESearch 경로가 이 PC에 없으면 기본 위치(`%USERPROFILE%\KIS\config\kis_devlp.yaml`, 저장소 루트)를 씁니다.
+- 원본 토큰이 3시간 30분 미만 남았으면 빌드가 멈춥니다(종료 코드 2). 통합문서를 열어 [모두 새로 고침]으로 토큰을 갱신·저장한 뒤 다시 실행합니다.
+
 ## 4. 버튼과 매일 루틴
 
 | 버튼(시트) | 하는 일 | 실측 시간 |
@@ -167,6 +196,8 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 | [시세]가 `오류: 오늘 세션 미확인` 1건 | 장 시작 직후 KIS 일봉에 오늘이 생기기 전 — 잠시 뒤 다시 |
 | [대회종목]이 빈칸 | 첫 [전체] 전이면 정상 — [전체] 실행 |
 | 분류가 이상함 / VALUESearch 파일 옮김 | [설정] `vs_path` 확인 → [전체](분류 갱신) → [모두 새로 고침] |
+| 다른 PC에서 열었더니 `KIS 설정`·파일 경로 오류 | `kis_devlp.yaml`을 `%USERPROFILE%\KIS\config\`에, VALUESearch 파일을 통합문서 폴더에 두고 아무 버튼이나 누르면 경로가 맞춰짐(또는 [설정]에서 직접 수정) |
+| 다른 PC에서 버튼이 막힘(“매크로를 차단했습니다”) | 파일 [속성] → [차단 해제] 체크 후 다시 열기 |
 | `Formula.Firewall` | [데이터] > [데이터 가져오기] > [쿼리 옵션] > 현재 통합 문서 > 개인 정보 수준 무시 |
 | 빌드가 종료 코드 2로 멈춤 | 토큰 남은 시간 부족 — 통합문서를 열어 [모두 새로 고침](토큰 갱신) 후 저장하고 다시 빌드 |
 
@@ -176,6 +207,8 @@ VBA로 자동화할 때는 `Application.CalculateUntilAsyncQueriesDone`을 쓰�
 
 - 앱키·시크릿은 통합문서에 저장되지 않습니다(Power Query가 `kis_devlp.yaml`을 직접 읽음).
 - 숨김 시트 `_sys`의 `tblToken`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`의 백업본에도 들어 있으니 남에게 보내기 전에 이 표 내용을 지우세요. `.xlsm`·`backup/`·`history/`는 git에서 제외됩니다.
+- 코드는 비공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력·VALUESearch 파일은 저장소에 들어가지 않습니다.
+- 저장소 루트의 `kis_devlp.yaml`은 공식 예제의 빈 양식으로 git에 들어 있습니다. 이 PC에서는 그 파일에 실제 앱키를 적어 두었기 때문에, 실수로 커밋되지 않도록 git이 로컬 변경을 무시하게 해 두었습니다(`git update-index --skip-worktree kis_devlp.yaml`, 되돌리기는 `--no-skip-worktree`). 다른 PC에서도 실제 값은 `~/KIS/config/kis_devlp.yaml`에만 두세요.
 - 대회 계좌 잔고는 자동으로 가져오지 않습니다(모의투자 앱키 없음). 대회 체결 내역을 [매매일지]에 옮겨 적습니다.
 
 ## 12. 개발·검증 도구 (`tools/`)
