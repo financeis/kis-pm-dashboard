@@ -18,11 +18,21 @@
 '   쿼리 T_X는 표 tblX에 적재된다(T_A_X는 tblA_X). 매크로는 표의 QueryTable을 새로 고친다.
 '
 ' 실행 순서
-'   0) 이 Excel 세션의 첫 버튼 실행이면(모듈 변수 m_warmed) 먼저 mode=build로 두고 이 버튼의 표(T_Token과 CSV 단계 제외)를
-'      한 번씩 동기 새로 고침한다 - build 모드라 KIS 호출이 없다. 파일을 연 뒤 첫 새로 고침은 Excel이 쿼리를 한 번 더
-'      평가해 KIS 호출이 겹칠 수 있어(실측), 그 겹치는 평가를 호출 없는 모드에서 미리 치르게 하려는 것(2026-10-01 T23).
-'      예열 중 실패는 무시한다(본 단계에서 다시 판정). Esc로 멈추면 다음 실행에서 다시 예열한다.
-'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다. 둘 중 하나라도 쓰지 못하면 단계를 하나도 실행하지 않고
+'   0) 예열: 통합문서를 연 뒤 표마다 첫 새로 고침에서는 Excel이 쿼리를 한 번 더 평가해 KIS 호출이 겹칠 수 있다(실측).
+'      그래서 이 Excel 세션에서 아직 한 번도 새로 고치지 않은 이 버튼의 표(T_Token과 CSV 단계 제외)를 먼저 mode=build로 두고
+'      한 번씩 동기 새로 고침한다 - build 모드라 KIS 호출이 없다(2026-10-01 T23). 새로 고친 표는 모듈 변수 m_refreshed(표 이름
+'      사전)에 남겨 표마다 한 번만 예열한다 - 예: [시세]나 [업종]을 먼저 누른 뒤 [전체]를 누르면 [전체]에만 있는 표들을 예열한다
+'      (세션 첫 버튼 하나만 예열하던 때는 그 뒤 다른 버튼의 표가 첫 새로 고침에서 호출을 겹쳐 냈다 - T24에서 고침).
+'      예열은 [전체](mode=full)에서만 한다(WARMUP_MODES). [시세]·[업종]·[조회]는 예열 비용이 막는 호출보다 크다(T24 실측,
+'      복사본·새 Excel 세션의 첫 실행: [시세] 예열 있음 79초 / 없음 54초(두 번째 실행 37~40초), [업종] 40초 / 30초(20초);
+'      예열 없이 겹칠 수 있는 호출은 [시세] 약 20회(멀티 시세 18 + 세션 달력), [업종] 약 47회이고 걸리는 시간 차이는 2초 안쪽).
+'      그 버튼들이 새로 고친 표도 m_refreshed에 남으므로 뒤이은 [전체]는 그 표를 다시 예열하지 않는다.
+'      예열 중 실패는 무시한다(본 단계에서 다시 판정). Esc로 멈추면 다음 실행에서 남은 표를 다시 예열한다.
+'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다. 예열을 했으면 먼저 시계가 다음 초로 넘어갈 때까지 기다린다
+'      (WaitNextSecond, 1초 이내): 쿼리의 재호출 방지 확인은 '자기 표 조회시각 >= started'인데 Now는 초 단위로 잘리므로,
+'      예열이 같은 초 안에 남긴 조회시각이 started 이상이 되어 그 표의 본 단계가 계산 없이 예열 결과를 돌려줄 수 있었다
+'      (T24 실측: 새 세션 첫 [시세]에서 테마 집계가 대회종목 표보다 먼저 계산된 값으로 남음).
+'      둘 중 하나라도 쓰지 못하면 단계를 하나도 실행하지 않고
 '      멈춘다(요약에 사유). mode를 못 쓰면 쿼리가 build로 돌아 조회가 없고, started를 못 쓰면 지난 실행의 started가 남아
 '      쿼리의 재호출 방지 확인(자기 표 조회시각 >= started)이 이번 조회까지 막을 수 있기 때문.
 '   2) 단계마다 표의 QueryTable을 동기 새로 고침한다(BackgroundQuery를 잠시 끄고 Refresh False, 끝나면 원래
@@ -72,6 +82,7 @@
 '   (통합문서 표를 읽는 쿼리와 교착됨). 표별 동기 새로 고침과 QueryTable.Refreshing 확인만 쓴다.
 ' 참조 추가 없음: ADODB.Stream, Scripting.FileSystemObject, Scripting.Dictionary는 CreateObject로 쓴다.
 ' 시험용 공개 함수: JudgeTable(표 이름), SaveEstSnapCsv() - "판정|건수|사유" 문자열을 돌려준다.
+'   RefreshedTables() - 이 Excel 세션에서 새로 고친 표 이름(소문자, 쉼표로 이음) - 예열 동작 확인용.
 '==================================================================================================
 Option Explicit
 
@@ -91,8 +102,12 @@ Private Const WAIT_BUSY_SECONDS As Long = 120
 Private Const REASON_MAX As Long = 200
 Private Const REASON_MAX_BOX As Long = 60
 
-' 이 Excel 세션에서 첫 버튼 실행 전 예열(build 모드 새로 고침)을 마쳤는지. VBA 프로젝트가 초기화되면 False로 돌아간다.
-Private m_warmed As Boolean
+' 예열하는 실행 모드(머리 주석 0번 - T24 실측으로 [전체]만). 형식: "|모드|모드|"
+Private Const WARMUP_MODES As String = "|full|"
+
+' 이 Excel 세션에서 한 번이라도 새로 고친 표(예열과 본 단계 모두): 표 이름(소문자) -> True (Scripting.Dictionary).
+' 아직 새로 고치지 않은 표만 예열한다(머리 주석 0번). VBA 프로젝트가 초기화되면(통합문서를 다시 열면) 비워진다.
+Private m_refreshed As Object
 
 ' 한 번의 버튼 실행 상태 (재진입은 m_running으로 막는다)
 Private m_running As Boolean
@@ -164,6 +179,13 @@ Public Function SaveEstSnapCsv() As String
     SaveEstSnapCsv = VerdictName(verdict) & "|" & cnt & "|" & reason
 End Function
 
+Public Function RefreshedTables() As String
+    If m_refreshed Is Nothing Then Exit Function
+    If m_refreshed.Count = 0 Then Exit Function
+    ' keys: 이 모듈의 변수 keys(JudgeStatus)와 같은 대소문자로 써야 VBE가 바꾸지 않는다(빌더의 넣은 코드 대조).
+    RefreshedTables = Join(m_refreshed.keys, ",")
+End Function
+
 '--------------------------------------------------------------------------------------------------
 ' 실행기
 '--------------------------------------------------------------------------------------------------
@@ -214,14 +236,14 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
     BuildSteps steps
     nSteps = m_n
 
-    If Not m_warmed Then
+    If NeedsWarmUp(modeName, nSteps) Then
         If Not SetKeyValue("tblRunCtl", "mode", "build", True, why) Then
             AbortRun "mode를 build로 쓰지 못함: " & why
             GoTo Finalize
         End If
-        WarmUp title, nSteps
+        WarmUp title, modeName, nSteps
         If m_cancelled Then GoTo Finalize
-        m_warmed = True
+        WaitNextSecond
     End If
 
     If Not SetKeyValue("tblRunCtl", "mode", modeName, True, why) Then
@@ -307,15 +329,16 @@ Private Sub AbortRun(ByVal reason As String)
         Clip(CleanText(reason), REASON_MAX) & " - 실행을 멈춤(KIS 호출 없음)"
 End Sub
 
-' 이 Excel 세션의 첫 버튼 실행: 이 버튼의 표를 build 모드(KIS 호출 없음)로 한 번씩 새로 고친다(머리 주석 0번).
+' 예열: 이 버튼의 표 중 이 세션에서 아직 새로 고치지 않은 표를 build 모드(KIS 호출 없음)로 한 번씩 새로 고친다(머리 주석 0번).
 ' tblToken(T_Token은 모드와 상관없이 토큰을 확인)과 CSV 단계(표 없음)는 건너뛴다. 결과는 판정에 쓰지 않는다.
-Private Sub WarmUp(ByVal title As String, ByVal nSteps As Long)
+' 새로 고친 표는 RefreshTable이 m_refreshed에 남긴다.
+Private Sub WarmUp(ByVal title As String, ByVal modeName As String, ByVal nSteps As Long)
     Dim i As Long
     Dim lo As ListObject
     Dim why As String
     For i = 1 To nSteps
         If m_cancelled Then Exit Sub
-        If Len(m_tables(i)) > 0 And StrComp(m_tables(i), "tblToken", vbTextCompare) <> 0 Then
+        If WantsWarmUp(modeName, m_tables(i)) Then
             Set lo = FindTable(m_tables(i))
             If Not lo Is Nothing Then
                 Application.StatusBar = title & " 첫 실행 준비(호출 없음) " & i & "/" & nSteps & " " & m_names(i) & Ellipsis()
@@ -324,6 +347,37 @@ Private Sub WarmUp(ByVal title As String, ByVal nSteps As Long)
             End If
         End If
     Next i
+End Sub
+
+' 예열할 표인지: 예열하는 모드(WARMUP_MODES)이고, 표 단계이며 tblToken이 아니고, 이 세션에서 아직 새로 고치지 않은 표.
+Private Function WantsWarmUp(ByVal modeName As String, ByVal tableName As String) As Boolean
+    If InStr(1, WARMUP_MODES, "|" & modeName & "|", vbTextCompare) = 0 Then Exit Function
+    If Len(tableName) = 0 Then Exit Function
+    If StrComp(tableName, "tblToken", vbTextCompare) = 0 Then Exit Function
+    WantsWarmUp = Not WasRefreshed(tableName)
+End Function
+
+' 이 버튼 실행에 예열할 표가 하나라도 있는지(없으면 mode를 build로 쓰는 일도 건너뜀).
+Private Function NeedsWarmUp(ByVal modeName As String, ByVal nSteps As Long) As Boolean
+    Dim i As Long
+    For i = 1 To nSteps
+        If WantsWarmUp(modeName, m_tables(i)) Then
+            If Not FindTable(m_tables(i)) Is Nothing Then
+                NeedsWarmUp = True
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+Private Function WasRefreshed(ByVal tableName As String) As Boolean
+    If m_refreshed Is Nothing Then Exit Function
+    WasRefreshed = m_refreshed.Exists(LCase$(tableName))
+End Function
+
+Private Sub MarkRefreshed(ByVal tableName As String)
+    If m_refreshed Is Nothing Then Set m_refreshed = CreateObject("Scripting.Dictionary")
+    m_refreshed(LCase$(tableName)) = True
 End Sub
 
 ' 단계 목록을 결과 배열에 '실행 안 함'(실패)으로 먼저 채운다. 실행된 단계만 결과를 덮어쓴다.
@@ -414,6 +468,7 @@ Private Function RefreshTable(ByVal lo As ListObject, ByRef why As String) As Bo
     qt.BackgroundQuery = False
     qt.Refresh False
     RefreshTable = True
+    MarkRefreshed lo.Name
 Done:
     On Error Resume Next
     If haveBg Then qt.BackgroundQuery = prevBg
@@ -1072,3 +1127,12 @@ End Function
 Private Function Ellipsis() As String
     Ellipsis = ChrW(&H2026)
 End Function
+
+' 시계(Now, 초 단위)가 다음 초로 넘어갈 때까지 기다린다(1초 이내). 예열 뒤 started가 예열의 조회시각보다 늦게 하려는 것(머리 주석 1번).
+Private Sub WaitNextSecond()
+    Dim t As Date
+    t = Now
+    Do While Now = t
+        DoEvents
+    Loop
+End Sub
