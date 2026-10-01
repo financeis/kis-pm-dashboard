@@ -28,10 +28,19 @@
 '      예열 없이 겹칠 수 있는 호출은 [시세] 약 20회(멀티 시세 18 + 세션 달력), [업종] 약 47회이고 걸리는 시간 차이는 2초 안쪽).
 '      그 버튼들이 새로 고친 표도 m_refreshed에 남으므로 뒤이은 [전체]는 그 표를 다시 예열하지 않는다.
 '      예열 중 실패는 무시한다(본 단계에서 다시 판정). Esc로 멈추면 다음 실행에서 남은 표를 다시 예열한다.
-'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다. 예열을 했으면 먼저 시계가 다음 초로 넘어갈 때까지 기다린다
-'      (WaitNextSecond, 1초 이내): 쿼리의 재호출 방지 확인은 '자기 표 조회시각 >= started'인데 Now는 초 단위로 잘리므로,
-'      예열이 같은 초 안에 남긴 조회시각이 started 이상이 되어 그 표의 본 단계가 계산 없이 예열 결과를 돌려줄 수 있었다
-'      (T24 실측: 새 세션 첫 [시세]에서 테마 집계가 대회종목 표보다 먼저 계산된 값으로 남음).
+'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다. 예열을 했으면 그 전에 두 가지를 기다린다.
+'      ① 마지막 예열 새로 고침 뒤 WARMUP_SETTLE_SECONDS(15)초 + 예열에 걸린 시간(최대 WARMUP_SETTLE_MAX_SECONDS 120초)
+'         (SettleAfterWarmUp, 상태 표시줄 "준비 중... n초"): Excel은 새로 고친 쿼리들을 몇 초 뒤 백그라운드에서 한 번 더
+'         평가하는데(Excel이 쉴 때 시작해 예열한 표를 하나씩 다시 평가하는 묶음), 그때 이미 mode=full과 새 started가 적혀
+'         있으면 그 평가가 조회를 다시 해 KIS 호출이 겹친다(예: 주간 조사일의 신용·공매도·대차 약 1,500회). 묶음이 다시
+'         평가하는 쿼리는 예열에서 방금 평가한 것들이라 걸리는 시간도 예열과 비슷하므로 기다림을 예열 시간에 맞춰 늘린다.
+'         2026-10-02 요청 수 계수 모의 서버 실측(새 Excel 세션의 첫 [전체], 7종목): 기다림 없음 - 본 단계가 길면 묶음이
+'         본 단계 중에 돌아 중복(표 14개: 47·128건), 15초 고정 - 묶음이 15초보다 길어 전환 뒤까지 이어져 중복(표 9개:
+'         81건, 6/6회), 30·60초 고정 0건(7/7회), 이 규칙(15초 + 예열 시간, 실제 34·50초) 0건(4/4회).
+'         예열에서 새로 고친 쿼리 표가 없으면(이 세션에서 이미 예열했거나 쿼리에 연결되지 않은 표뿐) 기다리지 않는다.
+'      ② 시계가 다음 초로 넘어갈 때까지(WaitNextSecond, 1초 이내): 쿼리의 재호출 방지 확인은 '자기 표 조회시각 >= started'인데
+'         Now는 초 단위로 잘리므로, 예열이 같은 초 안에 남긴 조회시각이 started 이상이 되어 그 표의 본 단계가 계산 없이
+'         예열 결과를 돌려줄 수 있었다(T24 실측: 새 세션 첫 [시세]에서 테마 집계가 대회종목 표보다 먼저 계산된 값으로 남음).
 '      둘 중 하나라도 쓰지 못하면 단계를 하나도 실행하지 않고
 '      멈춘다(요약에 사유). mode를 못 쓰면 쿼리가 build로 돌아 조회가 없고, started를 못 쓰면 지난 실행의 started가 남아
 '      쿼리의 재호출 방지 확인(자기 표 조회시각 >= started)이 이번 조회까지 막을 수 있기 때문.
@@ -52,6 +61,9 @@
 '      (UTF-8 BOM, 줄 끝 CRLF, 머리글 = 표 열 이름, 날짜 yyyy-mm-dd, 시각이 있는 열은 yyyy-mm-dd hh:nn:ss,
 '      숫자는 로캘과 무관하게 소수점 ".", 쉼표·큰따옴표·줄바꿈이 든 글자는 큰따옴표로 감쌈). 이 단계도 따로
 '      판정한다. 표가 비었는데 CSV가 이미 있으면 이력을 지우지 않도록 덮어쓰지 않고 실패로 판정한다.
+'      스냅샷 표는 행을 지우지 않으므로(쌓기만 함) 표의 행 수가 기존 CSV의 데이터 행 수보다 적거나 기존 CSV의 행 수를 읽지
+'      못하면 기존 파일을 그대로 두고 새 내용을 history\est_snap_yyyymmdd_hhnnss.csv로 따로 저장한 뒤 그 단계를 일부 오류
+'      1건("오류: ..." 사유)으로 판정한다(실행은 계속). 기존 CSV 행 수는 큰따옴표 안의 줄바꿈을 빼고 센다.
 '      이어서 tblSettings의 force_weekly를 N으로 되돌린다(사용자가 Esc로 중단한 실행은 되돌리지 않음).
 '   5) 이름 칸 ..._최근조회에 종료 시각, ..._상태에 요약을 쓴다. 실패한 단계가 있으면
 '      "실패: <단계들> (줄표) 이전 데이터 표시 중", 없고 일부 오류가 있으면 "일부 오류 n건"(건수 합), 그 밖은 "정상".
@@ -97,6 +109,8 @@ Private Const PREFIX_PREV As String = "이전 데이터"
 Private Const PREFIX_ERR As String = "오류:"
 Private Const HISTORY_DIR As String = "history"
 Private Const SNAP_FILE As String = "est_snap.csv"
+' 기존 CSV를 덮지 않을 때 새 내용을 따로 저장하는 파일 이름 앞부분(뒤에 yyyymmdd_hhnnss.csv) - 머리 주석 4번
+Private Const SNAP_ALT_PREFIX As String = "est_snap_"
 Private Const TOKEN_MIN_MINUTES As Long = 5
 Private Const WAIT_BUSY_SECONDS As Long = 120
 Private Const REASON_MAX As Long = 200
@@ -104,6 +118,9 @@ Private Const REASON_MAX_BOX As Long = 60
 
 ' 예열하는 실행 모드(머리 주석 0번 - T24 실측으로 [전체]만). 형식: "|모드|모드|"
 Private Const WARMUP_MODES As String = "|full|"
+' 마지막 예열 새로 고침 뒤 mode·started를 쓰기 전에 기다리는 시간(머리 주석 1번 ①): 이 초 + 예열에 걸린 초, 최대 MAX 초
+Private Const WARMUP_SETTLE_SECONDS As Long = 15
+Private Const WARMUP_SETTLE_MAX_SECONDS As Long = 120
 
 ' 이 Excel 세션에서 한 번이라도 새로 고친 표(예열과 본 단계 모두): 표 이름(소문자) -> True (Scripting.Dictionary).
 ' 아직 새로 고치지 않은 표만 예열한다(머리 주석 0번). VBA 프로젝트가 초기화되면(통합문서를 다시 열면) 비워진다.
@@ -199,6 +216,7 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
     Dim prevStatus As Variant
     Dim stateSaved As Boolean
     Dim t0 As Double
+    Dim warmT0 As Double
     Dim secs As Double
     Dim endTime As Date
     Dim i As Long
@@ -241,7 +259,11 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
             AbortRun "mode를 build로 쓰지 못함: " & why
             GoTo Finalize
         End If
-        WarmUp title, modeName, nSteps
+        warmT0 = Timer
+        If WarmUp(title, modeName, nSteps) > 0 Then
+            If m_cancelled Then GoTo Finalize
+            SettleAfterWarmUp title, ElapsedSince(warmT0)
+        End If
         If m_cancelled Then GoTo Finalize
         WaitNextSecond
     End If
@@ -331,22 +353,51 @@ End Sub
 
 ' 예열: 이 버튼의 표 중 이 세션에서 아직 새로 고치지 않은 표를 build 모드(KIS 호출 없음)로 한 번씩 새로 고친다(머리 주석 0번).
 ' tblToken(T_Token은 모드와 상관없이 토큰을 확인)과 CSV 단계(표 없음)는 건너뛴다. 결과는 판정에 쓰지 않는다.
-' 새로 고친 표는 RefreshTable이 m_refreshed에 남긴다.
-Private Sub WarmUp(ByVal title As String, ByVal modeName As String, ByVal nSteps As Long)
+' 새로 고친 표는 RefreshTable이 m_refreshed에 남긴다. 새로 고침을 시도한 쿼리 표의 수를 돌려준다(쿼리에 연결되지 않은 표는
+' 평가되는 쿼리가 없으므로 세지 않음. 0이면 뒤의 기다림을 건너뜀).
+Private Function WarmUp(ByVal title As String, ByVal modeName As String, ByVal nSteps As Long) As Long
     Dim i As Long
     Dim lo As ListObject
     Dim why As String
+    Dim tried As Long
     For i = 1 To nSteps
-        If m_cancelled Then Exit Sub
+        If m_cancelled Then Exit For
         If WantsWarmUp(modeName, m_tables(i)) Then
             Set lo = FindTable(m_tables(i))
             If Not lo Is Nothing Then
                 Application.StatusBar = title & " 첫 실행 준비(호출 없음) " & i & "/" & nSteps & " " & m_names(i) & Ellipsis()
                 DoEvents
                 RefreshTable lo, why
+                If lo.SourceType <> xlSrcRange Then tried = tried + 1
             End If
         End If
     Next i
+    WarmUp = tried
+End Function
+
+' 마지막 예열 새로 고침 뒤 기다린다(머리 주석 1번 ①): WARMUP_SETTLE_SECONDS + 예열에 걸린 초(warmSecs), 최대
+' WARMUP_SETTLE_MAX_SECONDS. 그동안 mode는 build이고, DoEvents로 Excel이 예열한 쿼리들의 백그라운드 재평가를 처리하게 한다
+' (그 평가는 build 모드라 KIS를 부르지 않음). 상태 표시줄에 남은 초를 보여 준다. Esc는 다른 단계처럼 실행을 멈춘다(오류 18 ->
+' RunButton의 정리 단계).
+Private Sub SettleAfterWarmUp(ByVal title As String, ByVal warmSecs As Double)
+    Dim t0 As Double
+    Dim settleSecs As Long
+    Dim secsLeft As Long
+    Dim lastShown As Long
+    settleSecs = WARMUP_SETTLE_SECONDS + CLng(warmSecs)
+    If settleSecs > WARMUP_SETTLE_MAX_SECONDS Then settleSecs = WARMUP_SETTLE_MAX_SECONDS
+    t0 = Timer
+    lastShown = -1
+    Do
+        secsLeft = settleSecs - Int(ElapsedSince(t0))
+        If secsLeft <= 0 Then Exit Do
+        If secsLeft <> lastShown Then
+            Application.StatusBar = title & " 준비 중" & Ellipsis() & " " & secsLeft & "초"
+            lastShown = secsLeft
+        End If
+        DoEvents
+        If m_cancelled Then Exit Do
+    Loop
 End Sub
 
 ' 예열할 표인지: 예열하는 모드(WARMUP_MODES)이고, 표 단계이며 tblToken이 아니고, 이 세션에서 아직 새로 고치지 않은 표.
@@ -727,6 +778,9 @@ Private Sub SaveEstSnapCsvCore(ByRef verdict As Long, ByRef cnt As Long, ByRef r
     Dim folder As String
     Dim filePath As String
     Dim nRows As Long
+    Dim oldRows As Long
+    Dim readWhy As String
+    Dim altName As String
     verdict = V_FAIL
     cnt = 0
     reason = ""
@@ -753,6 +807,24 @@ Private Sub SaveEstSnapCsvCore(ByRef verdict As Long, ByRef cnt As Long, ByRef r
         Exit Sub
     End If
     If Not fso.FolderExists(folder) Then fso.CreateFolder folder
+    ' 스냅샷 표는 쌓기만 하므로 기존 CSV보다 행이 적으면(또는 기존 행 수를 모르면) 덮지 않고 따로 저장한다(머리 주석 4번)
+    If fso.FileExists(filePath) Then
+        oldRows = CsvDataRows(filePath, readWhy)
+        If oldRows < 0 Or nRows < oldRows Then
+            altName = SNAP_ALT_PREFIX & FileStamp(Now) & ".csv"
+            WriteUtf8Bom folder & "\" & altName, TableCsv(lo)
+            verdict = V_PARTIAL
+            cnt = 1
+            If oldRows < 0 Then
+                reason = PREFIX_ERR & " 기존 " & SNAP_FILE & "의 행 수를 읽지 못해(" & Clip(readWhy, 80) & ") 덮어쓰지 않고 " & _
+                         nRows & "행을 " & HISTORY_DIR & "\" & altName & "로 따로 저장"
+            Else
+                reason = PREFIX_ERR & " tblEstSnap " & nRows & "행이 기존 " & SNAP_FILE & " " & oldRows & "행보다 적어 " & _
+                         "기존 파일을 그대로 두고 " & HISTORY_DIR & "\" & altName & "로 따로 저장"
+            End If
+            Exit Sub
+        End If
+    End If
     WriteUtf8Bom filePath, TableCsv(lo)
     verdict = V_OK
     reason = nRows & "행 저장: " & HISTORY_DIR & "\" & SNAP_FILE
@@ -891,6 +963,64 @@ CloseStream:
     On Error GoTo 0
     Err.Raise errNo, "WriteUtf8Bom", errDesc
 End Sub
+
+' UTF-8 텍스트 파일 전체를 읽는다(ADODB.Stream의 utf-8 문자 집합은 앞의 BOM을 건너뜀).
+Private Function ReadUtf8(ByVal filePath As String) As String
+    Dim st As Object
+    Dim errNo As Long
+    Dim errDesc As String
+    Set st = CreateObject("ADODB.Stream")
+    On Error GoTo Fail
+    st.Type = 2
+    st.Charset = "utf-8"
+    st.Open
+    st.LoadFromFile filePath
+    ReadUtf8 = st.ReadText(-1)
+    st.Close
+    Exit Function
+Fail:
+    errNo = Err.Number
+    errDesc = Err.Description
+    Resume CloseStream
+CloseStream:
+    On Error Resume Next
+    st.Close
+    On Error GoTo 0
+    Err.Raise errNo, "ReadUtf8", errDesc
+End Function
+
+' CSV 파일의 데이터 행 수(머리글 1행과 끝의 빈 줄 제외). 큰따옴표 안의 줄바꿈은 행으로 세지 않는다
+' (큰따옴표로 나눈 조각 중 짝수 번째가 따옴표 밖 - 이스케이프된 "" 는 빈 조각이 되어 안팎이 그대로 유지됨).
+' 읽지 못하면 -1을 돌려주고 사유를 why에 쓴다.
+Private Function CsvDataRows(ByVal filePath As String, ByRef why As String) As Long
+    Dim fileBody As String
+    Dim pieces As Variant
+    Dim i As Long
+    Dim n As Long
+    why = ""
+    On Error GoTo Fail
+    fileBody = Replace(Replace(ReadUtf8(filePath), vbCrLf, vbLf), vbCr, vbLf)
+    Do While Right$(fileBody, 1) = vbLf
+        fileBody = Left$(fileBody, Len(fileBody) - 1)
+    Loop
+    If Len(fileBody) = 0 Then Exit Function
+    pieces = Split(fileBody, """")
+    For i = LBound(pieces) To UBound(pieces) Step 2
+        n = n + Len(pieces(i)) - Len(Replace(pieces(i), vbLf, ""))
+    Next i
+    CsvDataRows = n
+    Exit Function
+Fail:
+    why = CleanText(Err.Description)
+    If Len(why) = 0 Then why = "오류 번호 " & Err.Number
+    CsvDataRows = -1
+End Function
+
+' 파일 이름용 시각 yyyymmdd_hhnnss. Format$의 날짜 서식은 로캘을 따르므로 숫자만 서식한다.
+Private Function FileStamp(ByVal d As Date) As String
+    FileStamp = Format$(Year(d), "0000") & Format$(Month(d), "00") & Format$(Day(d), "00") & "_" & _
+                Format$(Hour(d), "00") & Format$(Minute(d), "00") & Format$(Second(d), "00")
+End Function
 
 '--------------------------------------------------------------------------------------------------
 ' 표·이름·키/값 도우미
