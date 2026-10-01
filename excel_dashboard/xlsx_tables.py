@@ -6,9 +6,10 @@
   날짜 서식이 적용된 숫자 → datetime, 빈 셀 → None.
 - 큰 표(가격 저장소 등)도 읽을 수 있게 시트 XML을 스트리밍으로 읽습니다.
 
-    from xlsx_tables import list_tables, read_table, read_records
+    from xlsx_tables import list_tables, read_table, read_records, read_sheet
     cols, rows = read_table("KIS_PM_Dashboard.xlsx", "tblTrades")
     recs = read_records("KIS_PM_Dashboard.xlsx", "tblSettings")   # [{"키": ..., "값": ...}, ...]
+    cols, rows = read_sheet("수집기업_valuesearch.xlsx", "Sheet2")   # 표가 아닌 일반 시트
 """
 from __future__ import annotations
 
@@ -226,6 +227,36 @@ class Workbook:
         data = [rows.get(r, [None] * width) for r in range(top, bottom + 1)]
         return cols, data
 
+    def read_sheet(self, sheet: str, header_row: int = 1) -> tuple[list[str], list[list]]:
+        """표가 아닌 일반 시트를 머리글 행 기준으로 읽음 (예: VALUESearch 내보내기 파일).
+        머리글이 빈 열은 버리고, 머리글 아래의 완전히 빈 행은 건너뜁니다."""
+        part = self.sheets.get(sheet)
+        if part is None:
+            raise KeyError(f"시트를 찾을 수 없습니다: {sheet}")
+        header: dict[int, str] = {}
+        body: list[dict[int, object]] = []
+        with self.zip.open(part) as fh:
+            row_no = 0
+            for _ev, el in ET.iterparse(fh, events=("end",)):
+                if el.tag != _M + "row":
+                    continue
+                row_no = int(el.get("r")) if el.get("r") else row_no + 1
+                if row_no >= header_row:
+                    vals: dict[int, object] = {}
+                    col_no = 0
+                    for c in el.findall(_M + "c"):
+                        col_no = _split_ref(c.get("r"))[0] if c.get("r") else col_no + 1
+                        v = self._cell_value(c)
+                        if v is not None and v != "":
+                            vals[col_no] = v
+                    if row_no == header_row:
+                        header = {k: str(v).strip() for k, v in vals.items()}
+                    elif vals:
+                        body.append(vals)
+                el.clear()
+        order = sorted(header)
+        return [header[k] for k in order], [[r.get(k) for k in order] for r in body]
+
 
 def list_tables(path: str) -> dict[str, dict]:
     with Workbook(path) as wb:
@@ -240,3 +271,8 @@ def read_table(path: str, name: str) -> tuple[list[str], list[list]]:
 def read_records(path: str, name: str) -> list[dict]:
     cols, rows = read_table(path, name)
     return [dict(zip(cols, r)) for r in rows]
+
+
+def read_sheet(path: str, sheet: str, header_row: int = 1) -> tuple[list[str], list[list]]:
+    with Workbook(path) as wb:
+        return wb.read_sheet(sheet, header_row)
