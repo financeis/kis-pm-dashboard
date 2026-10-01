@@ -2,3 +2,8 @@
 *.xlsx
 ~$*.xlsx
 __pycache__/
+# 매크로 포함 통합문서·백업·이력 CSV: 토큰 캐시와 개인 데이터가 들어 있음
+*.xlsm
+~$*.xlsm
+backup/
+history/
