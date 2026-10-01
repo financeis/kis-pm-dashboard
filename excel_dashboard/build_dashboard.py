@@ -187,15 +187,15 @@ QUERY_DESC = {
 VS_FILE_NAME = "수집기업_valuesearch.xlsx"   # NICS 분류 원천(VALUESearch 내보내기). 저장소 루트에 두며 git에는 넣지 않음
 
 
-def default_vs_path() -> str:
-    """설정 vs_path 기본값: 이 체크아웃이 속한 **주 저장소** 루트의 수집기업_valuesearch.xlsx 절대 경로.
+def main_repo_root() -> str:
+    """이 체크아웃이 속한 **주 저장소**의 루트 폴더 절대 경로.
 
-    git 워크트리에서 빌드해도 사용자 파일이 있는 주 저장소를 가리키도록 `git rev-parse --git-common-dir`
-    (주 저장소의 .git 폴더)의 상위 폴더를 쓴다. git이 없거나 실패하면 이 체크아웃의 루트(excel_dashboard의
-    상위 폴더)로 대신한다. 파일이 있는지는 확인하지 않는다(없으면 T_Class가 상태에 사유를 남기고 직전 분류 유지).
+    git 워크트리에서 실행해도 사용자 파일(VALUESearch 파일·실제 통합문서)이 있는 주 저장소를 가리키도록
+    `git rev-parse --git-common-dir`(주 저장소의 .git 폴더)의 상위 폴더를 쓴다. git이 없거나 실패하면 이 체크아웃의
+    루트(excel_dashboard의 상위 폴더)로 대신한다.
 
     Returns:
-        str: 예) C:\\Users\\me\\open-trading-api\\수집기업_valuesearch.xlsx
+        str: 예) C:\\Users\\me\\open-trading-api
     """
     root = os.path.dirname(HERE)
     try:
@@ -209,7 +209,17 @@ def default_vs_path() -> str:
                 root = os.path.dirname(common)
     except Exception:  # noqa: BLE001 — git이 없어도 빌드는 계속(체크아웃 루트로 대신)
         pass
-    return os.path.join(root, VS_FILE_NAME)
+    return root
+
+
+def default_vs_path() -> str:
+    """설정 vs_path 기본값: 주 저장소 루트(main_repo_root — git 워크트리에서 빌드해도 주 저장소)의
+    수집기업_valuesearch.xlsx 절대 경로. 파일이 있는지는 확인하지 않는다(없으면 T_Class가 상태에 사유를 남기고 직전 분류 유지).
+
+    Returns:
+        str: 예) C:\\Users\\me\\open-trading-api\\수집기업_valuesearch.xlsx
+    """
+    return os.path.join(main_repo_root(), VS_FILE_NAME)
 
 
 def settings_rows(cfg_path: str, sample: bool):
@@ -2479,7 +2489,8 @@ def resume_refusal(a) -> str | None:
 
     --resume은 이관 없이 체크포인트 파일로 다시 만든 뒤 출력 파일을 바꾸므로(덮기 전 백업은 함), 체크포인트 이후에 출력 통합문서에
     입력한 데이터(매매일지·설정·스냅샷 등)가 결과물에서 빠질 수 있다. 그래서 --out을 함께 주고 그 경로가 기본 통합문서
-    (excel_dashboard/KIS_PM_Dashboard.xlsm·.xlsx — 확장자와 관계없이 같은 이름이면 .xlsm으로 바뀌어 같은 파일이 됨)가 아닐 때만 허용한다.
+    (excel_dashboard/KIS_PM_Dashboard.xlsm·.xlsx — 확장자와 관계없이 같은 이름이면 .xlsm으로 바뀌어 같은 파일이 됨)가 아닐 때만
+    허용한다. git 워크트리에서 실행하면 주 저장소의 기본 통합문서도 거절한다.
 
     Args:
         a: argparse 결과(resume·out 속성; out은 주지 않았으면 None).
@@ -2496,8 +2507,9 @@ def resume_refusal(a) -> str | None:
     if getattr(a, "out", None) is None:
         return f"--resume(개발용 체크포인트 재개)은 이관 없이 다시 만들어 출력 파일을 바꾸므로 기본 통합문서에는 쓰지 않습니다 — {hint}"
     stem = os.path.normcase(os.path.splitext(os.path.realpath(os.path.abspath(a.out)))[0])
-    default_stem = os.path.normcase(os.path.splitext(os.path.realpath(DEFAULT_OUT))[0])
-    if stem == default_stem:
+    # 이 체크아웃의 기본 통합문서와, git 워크트리에서 실행할 때 주 저장소의 기본 통합문서(실제 통합문서) 둘 다 거절
+    defaults = {DEFAULT_OUT, os.path.join(main_repo_root(), os.path.basename(HERE), os.path.basename(DEFAULT_OUT))}
+    if stem in {os.path.normcase(os.path.splitext(os.path.realpath(p))[0]) for p in defaults}:
         return (f"--resume(개발용 체크포인트 재개)은 기본 통합문서({DEFAULT_OUT} · .xlsx)를 출력으로 쓸 수 없습니다"
                 f"(체크포인트 이후 입력한 데이터가 빠질 수 있음) — {hint}")
     return None

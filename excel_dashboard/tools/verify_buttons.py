@@ -47,7 +47,7 @@ from verify_common import (  # noqa: E402
     token_gate, wait_idle,
 )
 
-BAD_PATH = r"C:\T24_없는_폴더\kis_devlp.yaml"     # 실패 경로 시험용(존재하지 않는 설정 파일)
+BAD_PATH = r"C:\버튼검증_없는_폴더\kis_devlp.yaml"     # 실패 경로 시험용(존재하지 않는 설정 파일)
 
 MACROS = {
     "full": ("RefreshFull", "전체", 90 * 60),
@@ -175,7 +175,7 @@ def add_override(wb, code: str, value: str) -> None:
     c.NumberFormat = "@"
     c.Value2 = code
     row.Cells(1, hdr.index("대회편입") + 1).Value2 = value
-    row.Cells(1, hdr.index("메모") + 1).Value2 = "T24 시험(복사본)"
+    row.Cells(1, hdr.index("메모") + 1).Value2 = "버튼 검증 시험(복사본)"
 
 
 def connection_flags(wb) -> dict:

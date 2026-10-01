@@ -215,7 +215,7 @@ def main() -> int:
     ok = (not res["secret_hits"] and res.get("token_ok", True) and all(res["gitignore"].values())
           and not any(res["extra"].values()))
     res["pass"] = ok
-    print(f"V8 보안 검사: {os.path.basename(a.workbook)} — 파트 {res['parts']}개(DataMashup 안쪽 포함)")
+    print(f"보안 검사: {os.path.basename(a.workbook)} — 파트 {res['parts']}개(DataMashup 안쪽 포함)")
     print(f"  비밀값 항목 {len(secrets)}개(길이만: {res['secret_keys']}), 6자 미만 제외: {short or '없음'}")
     print(f"  비밀값 발견: {res['secret_hits'] or '없음'}")
     if token:

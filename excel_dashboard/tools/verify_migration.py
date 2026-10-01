@@ -90,7 +90,7 @@ def prepare(src: str, xlsx_out: str, token_source: str) -> dict:
         exp["outside_code"] = out_code
         add_row(find_table(wb, "tblTrades"), {"일자": dt.date(2026, 9, 30), "종목코드": "000270", "구분": "매수", "수량": 5,
                                               "단가": 100000, "전략": "V7시험", "매매근거": "이관 왕복 시험 행"})
-        add_row(find_table(wb, "tblWatch"), {"종목코드": out_code, "그룹": "V7", "투자포인트": "이관 왕복 시험(유니버스 밖)"})
+        add_row(find_table(wb, "tblWatch"), {"종목코드": out_code, "그룹": "이관시험", "투자포인트": "이관 왕복 시험(유니버스 밖)"})
         st = find_table(wb, "tblSettings")
         h = [str(x) for x in st.HeaderRowRange.Value2[0]]
         for r in range(1, st.ListRows.Count + 1):
@@ -110,7 +110,7 @@ def prepare(src: str, xlsx_out: str, token_source: str) -> dict:
             exp["snap_rows"] = snap.ListRows.Count
         ws = wb.Worksheets.Add(After=wb.Worksheets(wb.Worksheets.Count))
         ws.Name = USER_SHEET
-        ws.Range("A1").Value2 = "V7 사용자 추가 시트(이관하지 않고 경고해야 함)"
+        ws.Range("A1").Value2 = "사용자 추가 시트(이관하지 않고 경고해야 함)"
         exp["trades"] = find_table(wb, "tblTrades").ListRows.Count
         exp["watch"] = find_table(wb, "tblWatch").ListRows.Count
         wait_idle(wb, timeout=300)
@@ -123,7 +123,7 @@ def prepare(src: str, xlsx_out: str, token_source: str) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="V7 이관 왕복 검사(복사본) — 토큰 값은 출력하지 않음")
+    ap = argparse.ArgumentParser(description="이관 왕복 검사(복사본) — 토큰 값은 출력하지 않음")
     ap.add_argument("--source", required=True, help="원본 통합문서(.xlsm) — 복사만 함")
     ap.add_argument("--work", required=True, help="작업 폴더(스크래치)")
     ap.add_argument("--token-source", required=True)
@@ -180,7 +180,7 @@ def main() -> int:
             checks["trade_row"] = any(r.get("전략") == "V7시험" and r.get("종목코드") == "000270" for r in tr)
             wa = recs("tblWatch")
             checks["watch_rows"] = (len(wa), exp["watch"])
-            checks["watch_row"] = any(r.get("종목코드") == exp["outside_code"] and r.get("그룹") == "V7" for r in wa)
+            checks["watch_row"] = any(r.get("종목코드") == exp["outside_code"] and r.get("그룹") == "이관시험" for r in wa)
             st = {r["키"]: r["값"] for r in recs("tblSettings")}
             checks["setting_max_weight"] = st.get("max_weight") == exp["max_weight"]
             ov = recs("tblOverride")
@@ -202,7 +202,7 @@ def main() -> int:
     ok = (p.returncode == 0 and res["user_sheet_warning"] and res["xlsx_moved"] and res["vbom_after"] == res["vbom_before"]
           and checks and all(good(v) for v in checks.values()))
     res["pass"] = ok
-    print(f"V7 이관 왕복: 빌드 종료 코드 {p.returncode} ({res['build_seconds']}초), 사용자 시트 경고 {res['user_sheet_warning']}, "
+    print(f"이관 왕복: 빌드 종료 코드 {p.returncode} ({res['build_seconds']}초), 사용자 시트 경고 {res['user_sheet_warning']}, "
           f".xlsx 백업 폴더로 이동 {res['xlsx_moved']}, AccessVBOM {res['vbom_before']} → {res['vbom_after']}")
     for k, v in checks.items():
         print(f"  {'✓' if good(v) else '✗'} {k}: {v}")

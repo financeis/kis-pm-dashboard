@@ -101,7 +101,7 @@ def ymd(s):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="V9 NAV·성과 독립 재계산과 오류 셀 검사 (토큰 값은 출력하지 않음)")
+    ap = argparse.ArgumentParser(description="NAV·성과 독립 재계산과 오류 셀 검사 (토큰 값은 출력하지 않음)")
     ap.add_argument("--workbook", required=True)
     ap.add_argument("--token-source", required=True)
     ap.add_argument("--json", default=None)
@@ -240,7 +240,7 @@ def main() -> int:
         else:
             unexpected[sheet] = cells
 
-    print(f"V9 NAV 재구성: {len(grid)}일(기준 {grid[0]} ~ {grid[-1]}), 불일치 {len(nav_bad)}일, 최신 NAV 재계산 {nav[-1]:,.0f} / 통합문서 {wb_nav.get(grid[-1]) or 0:,.0f}")
+    print(f"NAV 재구성: {len(grid)}일(기준 {grid[0]} ~ {grid[-1]}), 불일치 {len(nav_bad)}일, 최신 NAV 재계산 {nav[-1]:,.0f} / 통합문서 {wb_nav.get(grid[-1]) or 0:,.0f}")
     for row in perf_rows:
         print(f"  {'✓' if row['ok'] else '✗'} {row['metric']}: 재계산 {row['recalc']} / 통합문서 {row['workbook']}")
     print(f"  손익 항등식: 실현 {realized:,.0f} + 평가 {unreal:,.0f} = {realized + unreal:,.0f} vs 순자산-초기자금 {identity['nav_minus_init']:,.0f} → {'일치' if identity['ok'] else '불일치'}")

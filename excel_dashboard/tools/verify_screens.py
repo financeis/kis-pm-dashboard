@@ -293,7 +293,7 @@ def render_copy(path: str, out_dir: str, token_source: str | None, screenshot: b
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="V6 색·화면 검사")
+    ap = argparse.ArgumentParser(description="색·화면 검사")
     ap.add_argument("--workbook", help="파일 검사할 통합문서(저장된 값)")
     ap.add_argument("--render-copy", help="렌더링·#### 검사할 복사본")
     ap.add_argument("--out", default=None, help="PNG 폴더")

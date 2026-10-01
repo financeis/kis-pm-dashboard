@@ -346,23 +346,38 @@ def shift_ym(k: str, n: int) -> str:
     return f"{t // 12:04d}{t % 12 + 1:02d}"
 
 
+def stored_quarters(q: dict[str, dict]) -> list[str]:
+    """실적 저장소(tblFin)에 남는 분기(결산년월 내림차순): 값이 하나라도 있는 가장 최근 분기부터 응답에 있는 분기 12개.
+    중간에 값이 전부 빈 분기도 남는다(T_Fin과 같은 규칙)."""
+    k0 = latest_quarter(q)
+    if k0 is None:
+        return []
+    return sorted((k for k in q if k <= k0), reverse=True)[:12]
+
+
+def known_quarters(q: dict[str, dict], d: dt.date) -> list[str]:
+    """날 d에 알려진(공개기준일 ≤ d) 저장 분기, 최근 순 — T_Company의 Known과 같은 집합(값이 빈 분기 포함)."""
+    return [k for k in stored_quarters(q) if q[k]["pub"] <= d]
+
+
 def ttm_eps(q: dict[str, dict], d: dt.date) -> Optional[float]:
-    """날 d에 알려진(공개기준일 ≤ d) 가장 최근 분기와 그 앞 3개 분기의 단독 EPS 합 — PER 변화(분자·분모)용."""
-    known = sorted([k for k, r in q.items() if r["pub"] <= d and any(r.get(f) is not None for f in ("eps", "bps", "sales"))])
+    """날 d에 알려진 분기 중 가장 최근 분기와 그 앞 3개 분기(3개월 간격, 모두 알려짐)의 단독 EPS 합 — PER 변화(분자·분모)용.
+    가장 최근 알려진 분기의 EPS가 비어 있으면 더 오래된 분기로 거슬러 가지 않고 None(T_Company와 같음)."""
+    known = known_quarters(q, d)
     if not known:
         return None
-    k0 = known[-1]
+    k0 = known[0]
     ks = [k0, shift_ym(k0, -3), shift_ym(k0, -6), shift_ym(k0, -9)]
-    vals = [q.get(k, {}).get("eps_q") for k in ks]
-    if any(v is None for v in vals) or any(q[k]["pub"] > d for k in ks if k in q):
+    if any(k not in known for k in ks):
         return None
-    return sum(vals)
+    vals = [q[k].get("eps_q") for k in ks]
+    return None if any(v is None for v in vals) else sum(vals)
 
 
 def bps_at(q: dict[str, dict], d: dt.date) -> Optional[float]:
-    """날 d에 알려진 가장 최근 분기의 BPS — PBR 변화(분자·분모)용."""
-    known = sorted([k for k, r in q.items() if r["pub"] <= d and any(r.get(f) is not None for f in ("eps", "bps", "sales"))])
-    return q[known[-1]].get("bps") if known else None
+    """날 d에 알려진 가장 최근 분기의 BPS — PBR 변화(분자·분모)용(그 분기가 비어 있으면 None)."""
+    known = known_quarters(q, d)
+    return q[known[0]].get("bps") if known else None
 
 
 def latest_quarter(q: dict[str, dict]) -> Optional[str]:
@@ -579,7 +594,7 @@ def pick_codes(company: list[dict], n: int) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="V5 독립 재계산(KIS 원천 → spec 정의) — 토큰 값은 출력하지 않음")
+    ap = argparse.ArgumentParser(description="독립 재계산(KIS 원천 → 업무 규칙 정의) — 토큰 값은 출력하지 않음")
     ap.add_argument("--workbook", required=True)
     ap.add_argument("--token-source", required=True)
     ap.add_argument("--codes", nargs="*", default=None)
@@ -607,7 +622,7 @@ def main() -> int:
     src = Source(kis, today)
     rep = Report()
     codes = a.codes or pick_codes(T["tblCompany"], a.n)
-    print(f"V5 재계산 기준 시각 {now:%Y-%m-%d %H:%M} · 표본 {len(codes)}종목: {' '.join(codes)}")
+    print(f"재계산 기준 시각 {now:%Y-%m-%d %H:%M} · 표본 {len(codes)}종목: {' '.join(codes)}")
 
     cal = src.calendar()
     sess_wb = sorted(as_date(r.get("일자")) for r in T["tblSessions"] if as_date(r.get("일자")))

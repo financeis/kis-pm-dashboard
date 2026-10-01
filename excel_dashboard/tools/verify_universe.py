@@ -74,7 +74,7 @@ def margin(mcap_eok: float | None, avg_eok: float | None) -> float:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="V2 대회 종목 명단 경계값 독립 재계산 (토큰 값은 출력하지 않음)")
+    ap = argparse.ArgumentParser(description="대회 종목 명단 경계값 독립 재계산 (토큰 값은 출력하지 않음)")
     ap.add_argument("--token-source", required=True)
     ap.add_argument("--n-in", type=int, default=18)
     ap.add_argument("--n-out", type=int, default=18)

@@ -22,7 +22,7 @@
 | 주체 | 허용 | 금지 |
 |---|---|---|
 | 통합문서 쿼리 | KIS 시세·정보 GET, 마스터 zip, yaml·VALUESearch 파일 읽기, 통합문서 표 읽기 | 주문·정정·취소·계좌 API, 파일 쓰기 |
-| VBA 버튼 매크로 | `tblRunCtl`·설정 `force_weekly`·최근 조회/상태 칸 쓰기, 표 새로 고침, `history/est_snap.csv` 쓰기 | 레지스트리·다른 파일 변경, `CalculateUntilAsyncQueriesDone` |
+| VBA 버튼 매크로 | `tblRunCtl`·설정 `force_weekly`·최근 조회/상태 칸 쓰기, 표 새로 고침, `history/est_snap.csv` 쓰기, 그 파일을 덮지 않을 때 `history/est_snap_yyyymmdd_hhnnss.csv` 새로 쓰기(`history` 폴더가 없으면 만듦) | 레지스트리·다른 파일 변경, `CalculateUntilAsyncQueriesDone` |
 | 빌더 | 새 통합문서 생성, 기존 통합문서 백업·이동, AccessVBOM을 빌드 동안만 1로 | 원본을 Excel로 열기(파일 파싱만), 백업 없는 삭제·덮어쓰기, 사용자가 연 Excel 창 건드리기 |
 | 개발·검증 도구 | 조회 전용 GET(주문 경로 `/trading/`·`/uapi/` 밖 경로 거부), 토큰 원천 파일 파싱 | 토큰 발급, 토큰 원천을 Excel로 열기(검증 도구의 버튼 실행만 예외 — 아래) |
 
