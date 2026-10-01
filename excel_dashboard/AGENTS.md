@@ -51,7 +51,7 @@ excel_dashboard/
 - 쿼리를 고치기 전: `powerquery/AGENTS.md`의 모드·가드·대체 경로 불변식과 engineering-notes의 '새로 고침 직후 다시 도는 쿼리'·'오류가 빈 행이 되는 버퍼'. 버튼 쿼리를 추가하면 engineering-notes의 체크리스트대로 빌더·VBA 등록까지.
 - 버튼 순서·판정·VBA를 고치기 전: `vba/AGENTS.md`, `docs/contracts.md`의 버튼 표와 `tblRunCtl` 키(바꾸면 쿼리·페이지·빌더를 함께).
 - 페이지 서식·차트를 고치기 전: `pages/AGENTS.md`의 표 행 추가 금지·RefreshStyle·기준점 가드·열 묶음 규칙.
-- 빌드·이관을 고치거나 실제 통합문서를 다시 만들기 전: `docs/operations.md`의 빌드 절차와 종료 코드, `docs/security.md`의 개발 중 토큰 규칙. 먼저 `python excel_dashboard/tools/kis_dev.py`로 원천 토큰 남은 분을 확인하고 복사본으로 빌드해 본다.
+- 빌드·이관을 고치거나 실제 통합문서를 다시 만들기 전: `docs/operations.md`의 빌드 절차와 종료 코드, `docs/engineering-notes.md`의 '빌더 동작'(새로 고침 순서·`_calc` 간격·시드·임시 행), `docs/security.md`의 개발 중 토큰 규칙. 먼저 `python excel_dashboard/tools/kis_dev.py`로 원천 토큰 남은 분을 확인하고 복사본으로 빌드해 본다.
 - 대회 종목·분류·지표·색 기준을 건드리기 전: `docs/business-rules.md`(수치·규칙은 사용자가 정한 그대로 — 대회 기준은 '이상'이다).
 
 ## 문제가 생기면

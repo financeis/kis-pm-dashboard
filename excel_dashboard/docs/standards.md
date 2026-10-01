@@ -18,7 +18,7 @@
 
 - 표 이름, 이름 정의(`분석코드`, `시세_/전체_/업종_/분석_최근조회`와 `…_상태`, `대회코드목록`), 매크로 이름(`RefreshQuick`·`RefreshFull`·`RefreshSector`·`RunAnalysis`), `tblRunCtl` 키(`mode`·`started`·`now_override`·`quiet`·`last_summary`)는 고정이다. 바꾸려면 쿼리·VBA·페이지·빌더를 함께 바꾼다.
 - 페이지 표의 적재 위치는 각 페이지 모듈의 `LOADS`가 정하고 빌더는 그대로 쓴다. 페이지 표는 적재 직후·첫 새로 고침 전에 `QueryTable.RefreshStyle = 0`(덮어쓰기)으로 바꾼다(`prepare_tables`). 이후 되돌리지 않는다.
-- 페이지 표와 `_calc`·`_store` 표에는 임시 행 추가·`ListRows.Add`/`Delete`를 하지 않는다(쌓인 표는 Excel이 거부하고, 행 삭제는 아래 표를 끌어올린다).
+- 페이지 표와 `_calc`·`_store` 표에는 빌더가 임시 행 추가·`ListRows.Add`/`Delete`를 하지 않는다(쌓인 표는 Excel이 거부하고, 행 삭제는 아래 표를 끌어올린다). 페이지 모듈 안에서는 아래에 다른 표가 없는 뉴스·이벤트 페이지만 빈 표 서식용 임시 행 1개를 넣었다 지운다.
 - 버튼 전용 쿼리는 연결 속성 '모두 새로 고침 시 이 연결 새로 고침'을 끄고 파일 열 때 새로 고침도 끈다. 파일 열 때 도는 쿼리는 `T_Token`뿐이다.
 - `tools/pq_harness.py`가 빌더에서 가져다 쓰는 이름(`settings_rows`, `SAMPLE_WATCH`, `sample_trades`, `MACRO_ROWS`, `HOLIDAYS`, `TRADE_HEADERS`, `LOADS`, `Builder.nav_links`, `Builder.HEADER_RIGHT`, `Builder.HEADER_STATUS`)은 이름과 형태를 유지한다.
 

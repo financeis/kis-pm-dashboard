@@ -8,7 +8,7 @@
 
 ## 불변식
 - 토큰을 발급하지 않는다. `/uapi/` 밖 경로(토큰 발급 등)와 `/trading/` 경로(주문·계좌)는 `KisClient`가 거부한다. 기본 초당 8건 제한·`EGW00201` 재시도.
-- 토큰 원천(인자 > 환경변수 `KIS_TOKEN_SOURCE` > 이 폴더 위의 `KIS_PM_Dashboard.xlsm` > `.xlsx` > git 공통 디렉터리 기준 주 저장소의 통합문서)은 Excel로 열지 않고 `xlsx_tables`로 파싱한다. 남은 시간 210분 미만이면 Excel을 띄우거나 호출하기 전에 멈춘다(종료 코드 2).
+- 토큰 원천(인자 > 환경변수 `KIS_TOKEN_SOURCE` > 이 폴더 위의 `KIS_PM_Dashboard.xlsm` > `.xlsx`; `pq_harness`와 `verify_common`은 그다음 git 공통 디렉터리 기준 주 저장소의 통합문서까지 찾음 — 별도 작업 폴더에서 돌릴 때)은 Excel로 열지 않고 `xlsx_tables`로 파싱한다. 남은 시간 210분 미만이면 Excel을 띄우거나 호출하기 전에 멈춘다(종료 코드 2).
 - 토큰·앱키·시크릿·계좌번호·HTS ID를 출력·JSON·CSV·로그에 쓰지 않는다. 하네스는 `tblToken` 읽기·덤프·렌더를 거부하고, 다른 출력에 토큰 문자열이 섞이면 `<토큰 가림>`으로 바꾼다.
 - 하네스는 시험 통합문서에 `T_Token`을 넣지 않고(요청·참조 시 종료 코드 3, Excel 기동 전), 토큰은 정적 `_sys!tblToken`으로 복사한다. 결과 파일은 저장소 밖에만 쓴다(저장소 경로 거부). Excel은 DispatchEx, 자기 PID만 종료하며 파이썬이 죽어도 작업 개체로 자기 Excel만 정리된다.
 - 하네스는 빌더에서 `settings_rows`·`SAMPLE_WATCH`·`sample_trades`·`MACRO_ROWS`·`HOLIDAYS`·`TRADE_HEADERS`·`LOADS`·`Builder.nav_links`·`HEADER_RIGHT`·`HEADER_STATUS`를 가져다 쓴다 — 빌더에서 이름이 바뀌면 여기도 바꾼다.

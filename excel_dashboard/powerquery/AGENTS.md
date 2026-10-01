@@ -14,7 +14,7 @@
 - KIS 호출은 `fnKisGet`/`fnKisGetPage`로만. `T_Token` 외의 쿼리는 토큰을 발급하지 않고 `T_Token`을 참조하지 않는다(시험 하네스는 `T_Token`을 참조하는 쿼리를 거부한다).
 - 버튼 전용 쿼리는 `fnPxRunCtl()`(또는 같은 규칙)의 모드가 자기 활성 모드일 때만 KIS를 부른다 — `T_Sessions`·`T_PxStore`: quick·full / `T_Class`·`T_FlowU`·`T_Fin`·`T_Target`·`T_Est`·`T_EstSnap`·`T_CSL`·`T_Events`: full / `T_SectorKRX`: sector·full / `T_A_*`: analysis. 그 밖에서는 자기 표 → `<표>Seed` → 열을 다 갖춘 빈 표. `T_Class`는 KIS를 부르지 않고 VALUESearch 파일을 모든 모드에서 읽는다. `T_PxMetrics`·`T_Company`·`T_ThemeAgg`는 KIS 없이 모든 모드에서 계산한다.
 - KIS를 부르는 계산은 함수 단계(`Fetch = () as table => …` / `Survey`)에 두고 `Main = if <활성> and not <같은 실행에서 이미 조회> then Fetch() else <자기 표>`. '이미 조회' = `started`가 있고 자기 표 최신 `조회시각` ≥ `started`(종목분석은 종목코드도 같아야 함).
-- 마지막 단계 `Tried = try Table.Buffer(Main)`, 실패 시 `Table.TransformColumnTypes(fnFallback("tbl…", 열, 사유), 형식)`. 종목별 `try` 안에서 값을 강제 평가하고, 실패 종목만 `오류: <사유>`(직전 값·조회시각 유지), 조회한 종목이 모두 실패하면 오류로 올린다.
+- 마지막 단계 `Tried = try Table.Buffer(Main)`, 실패 시 `Table.TransformColumnTypes(fnFallback("tbl…", 열, 사유), 형식)`. 종목별 `try` 안에서 값을 강제 평가하고, 실패 종목만 `오류: <사유>`, 조회한 종목이 모두 실패하면 오류로 올린다. 실패 종목의 값은 쿼리마다 다르다 — 자기참조 저장소(`T_Fin`·`T_CSL`·`T_Target`·`T_Est`)는 직전 값과 조회시각을 유지하고, `T_FlowU`·`T_SectorKRX`는 값을 비우고 조회시각을 지금으로, `T_News`는 실패 종목마다 제목 없는 행 1개를 덧붙인다.
 - 모든 적재 표에 `상태`·`조회시각`. 상태 값은 `OK`/`데이터 없음`/`추정 없음`/`오류: …`/`이전 데이터(…)`만. 열 이름·순서는 소비자(페이지·VBA·다른 쿼리)와의 약속이라 바꾸면 같이 바꾼다.
 - 대상 종목은 `fnPageRows()`, 분류는 `fnClassify`(결과는 유효 코드당 1행 — 종목코드로 다시 조인)로만. 종목코드는 텍스트, 금액 억원(KIS 백만원 ÷ 100, 원 ÷ 1e8), 비율 소수, 데이터 없음 null.
 - 자기참조 저장소(`T_PxStore`·`T_Fin`·`T_EstSnap`·`T_CSL`·`T_Target`·`T_Est`)는 자기 표가 비었을 때만 시드를 읽는다. `T_EstSnap`은 행을 지우지 않는다. `T_PxStore`는 (종목코드, 일자) 유일·달력 밖 날짜 없음(full이 지움).

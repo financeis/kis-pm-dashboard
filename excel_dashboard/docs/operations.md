@@ -60,7 +60,7 @@ python excel_dashboard/build_dashboard.py --cfg <yaml> --visible # 설정 파일
 ## 데이터 재생성
 
 - 대회 명단: `python excel_dashboard/tools/make_contest_universe.py --base-date 20260930 --sessions 20260922,20260923,20260928,20260929,20260930 --mcap-min-eok 1000 --turnover-min-eok 25 --out excel_dashboard/data/contest_universe_20260930.csv [--audit <파일>] [--force]` — 약 1,900회 호출·5~6분. 기존 파일은 `--force` 없이 덮지 않는다(종료 코드 5). 분할·합병 등 판단할 수 없는 이벤트가 있으면 종료 코드 4로 멈춘다. 결과를 바꾸면 빌드를 다시 해야 통합문서의 `tblContest`에 반영된다.
-- 기본 테마표: `python excel_dashboard/tools/theme_helper.py extract`(검토용 목록) → `data/themes_base.csv` 편집 → `python excel_dashboard/tools/theme_helper.py check`(종료 코드 0이어야 함) → 빌드. 사용자 수정은 기본표가 아니라 [설정] 수정표에 한다.
+- 기본 테마표: `python excel_dashboard/tools/theme_helper.py extract --out-dir <저장소 밖 폴더>`(검토용 목록: 명단 + VALUESearch + KIS 테마 마스터) → `data/themes_base.csv` 편집 → `python excel_dashboard/tools/theme_helper.py check`(종료 코드 0이어야 함) → 빌드. 사용자 수정은 기본표가 아니라 [설정] 수정표에 한다.
 - VALUESearch 파일 갱신: 같은 열 이름으로 내보내 `vs_path` 위치에 덮어쓰기 → [전체](분류 갱신) → [모두 새로 고침](종목DB 반영).
 
 ## 검증 명령
@@ -75,7 +75,7 @@ python excel_dashboard/tools/verify_buttons.py --workbook <복사본.xlsm> --tok
 python excel_dashboard/tools/verify_recalc.py  --workbook <저장한.xlsm> --token-source <원천.xlsm>
 python excel_dashboard/tools/verify_regress.py --workbook <저장한.xlsm> --token-source <원천.xlsm>
 python excel_dashboard/tools/verify_screens.py --workbook <저장한.xlsm>
-python excel_dashboard/tools/verify_migration.py --source excel_dashboard/KIS_PM_Dashboard.xlsm --work <스크래치 폴더>
+python excel_dashboard/tools/verify_migration.py --source excel_dashboard/KIS_PM_Dashboard.xlsm --work <스크래치 폴더> --token-source excel_dashboard/KIS_PM_Dashboard.xlsm
 ```
 
 - 토큰이 필요한 도구는 원천의 남은 시간이 210분 미만이면 종료 코드 2로 멈춘다.
