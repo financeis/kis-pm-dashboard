@@ -1,4 +1,4 @@
-// T_Universe : KOSPI·KOSDAQ 종목 유니버스 (KIS 종목정보 마스터파일, 인증 불필요) + 분류·대회편입 (spec R19·R2·§5, 2026-10-01 T22)
+// T_Universe : KOSPI·KOSDAQ 종목 유니버스 (KIS 종목정보 마스터파일, 인증 불필요) + 분류·대회편입 (2026-10-01)
 //  - 저장소 stocks_info/kis_kospi_code_mst.py, kis_kosdaq_code_mst.py, sector_code.py 의 정제 로직을 M으로 옮긴 것
 //  - 주식(ST)·외국주식(FS)·DR만 남기고 ETF/ETN/리츠/펀드 등은 제외
 //  - KRX업종 = 기존 섹터 계산 규칙의 KRX 지수업종 이름(중분류 → 없으면 대분류 → 없으면 "기타"). 분류 대체의 입력이자

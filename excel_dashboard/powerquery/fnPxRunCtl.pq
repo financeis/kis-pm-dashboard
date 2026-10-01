@@ -1,4 +1,4 @@
-// fnPxRunCtl : 버튼 실행 모드와 '지금'(시험용 시계) — T_Sessions·T_PxStore·T_PxMetrics 공용 (spec §3·R5, 2026-10-01 T5)
+// fnPxRunCtl : 버튼 실행 모드와 '지금'(시험용 시계) — T_Sessions·T_PxStore·T_PxMetrics 공용 (2026-10-01)
 //  - tblRunCtl(키, 값)의 mode: quick([시세]) / full([전체]) / sector / analysis / build. 비었거나 모르는 값이면 build로 본다.
 //    KIS를 부르는 것은 quick·full뿐이고, 그 밖의 모드(빌드·표 우클릭 새로 고침·파일 열기)는 호출 없이 저장값을 돌려준다.
 //  - now_override(일시, 시험 전용 — 평소 비어 있음): 있으면 시스템 시각 대신 이 값을 '지금'으로 쓴다(장 시작 전·휴장일·

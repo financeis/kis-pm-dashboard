@@ -1,4 +1,4 @@
-// T_A_KisEst : 종목분석 7구역 — KIS 추정실적 연도별 표 (spec R17-7, R9 단위 규칙) → tblA_KisEst (2026-10-01 T15)
+// T_A_KisEst : 종목분석 7구역 — KIS 추정실적 연도별 표 (단위: EPS·비율 ÷ 10, 금액 억원 — docs/business-rules.md의 'KIS 추정과 Fwd PER') → tblA_KisEst (2026-10-01)
 //  - 원천: 국내주식 종목추정실적 [국내주식-187] HHKST668300C0 /uapi/domestic-stock/v1/quotations/estimate-perform (SHT_CD, 1회)
 //    = 한국투자증권 리서치 자체 추정(컨센서스 아님). 저장소 예시의 열 매핑은 틀림 — 아래는 2026-09-30·10-01 실측 해석.
 //    + 현재가는 fnAQuote(호출 1회 — 추정이 있는 종목만).

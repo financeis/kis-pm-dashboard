@@ -1,4 +1,4 @@
-// T_ThemeAgg : 테마 집계 — 대회 종목만, 대테마별 행과 그 아래 세부테마별 행 (spec R15, 2026-10-01 T16) → tblThemeAgg
+// T_ThemeAgg : 테마 집계 — 대회 종목만, 대테마별 행과 그 아래 세부테마별 행 (2026-10-01) → tblThemeAgg
 //   [KIS 호출 없음 — 어느 모드에서나 tblCompany(대회종목 표)로 계산]
 //  - 원천: tblCompany. [시세]·[전체]에서 T_Company 바로 다음, [업종]에서는 T_SectorKRX 다음에 새로 고쳐 늘 최신 대회종목 표를 반영한다
 //    (같은 새로 고침 안에서 다른 쿼리의 적재 표는 직전 결과로 읽히므로, 빌드도 T_Company → T_ThemeAgg 순서로 새로 고쳐야 한다).

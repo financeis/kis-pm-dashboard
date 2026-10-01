@@ -1,4 +1,4 @@
-// T_A_News : 종목분석 9구역 — 이 종목의 뉴스·공시 제목 최근 40건 (spec R17-9, R12) → tblA_News (2026-10-01 T15)
+// T_A_News : 종목분석 9구역 — 이 종목의 뉴스·공시 제목 최근 40건 → tblA_News (2026-10-01)
 //  - 원천: 종합 시황/공시(제목) [국내주식-141] FHKST01011800 /uapi/domestic-stock/v1/quotations/news-title — FID_INPUT_ISCD만 지정(1회 = 40건).
 //    T_News(보유·관심 종목 묶음)와 같은 해석: data_dt(YYYYMMDD) + data_tm(HHMMSS) → 일시, hts_pbnt_titl_cntt → 제목, dorg(자료원) → 출처.
 //  - 같은 일시·제목·출처는 1건. 정렬: 일시 내림차순(같으면 기사 일련번호 cntt_usiq_srno 내림차순). 0건이면 "데이터 없음" 1행

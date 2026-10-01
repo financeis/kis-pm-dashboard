@@ -1,4 +1,4 @@
-// fnARun : 종목분석(tblA_*) 쿼리 공통 실행기 — 실행 모드·분석코드 검사·실패 시 직전 표 유지 (spec R17, 2026-10-01 T15)
+// fnARun : 종목분석(tblA_*) 쿼리 공통 실행기 — 실행 모드·분석코드 검사·실패 시 직전 표 유지 (2026-10-01)
 //  - 사용: T_A_X = fnARun("tblA_X", Types, (code as text, now as datetime) as table => <그 종목의 표>)
 //    Types = {{"열", type …}, …} — 표의 열 이름·순서·형식. 모든 경로(성공·직전 표·Seed·빈 표·상태 1행)가 같은 열 구성.
 //    main은 analysis 모드에서 분석코드가 올바를 때만 한 번 불린다(code = 정규화한 6자리, now = 이 쿼리의 조회시각).

@@ -1,4 +1,4 @@
-// T_News : 보유·관심 종목 뉴스·공시 제목 — 시간순으로 합친 최근 100건 (spec R12, [모두 새로 고침]에서 갱신)
+// T_News : 보유·관심 종목 뉴스·공시 제목 — 시간순으로 합친 최근 100건 ([모두 새로 고침]에서 갱신)
 //  - 종합 시황/공시(제목) [국내주식-141] FHKST01011800 /uapi/domestic-stock/v1/quotations/news-title
 //    종목당 1회 호출 = 그 종목코드가 등록된 최근 40건(연속 조회 없음). FID_INPUT_ISCD만 지정하고 나머지 입력은 공백(현재 기준).
 //  - 응답 output[] → 열: data_dt(작성일자 YYYYMMDD) + data_tm(작성시간 HHMMSS) → 일시, hts_pbnt_titl_cntt → 제목,

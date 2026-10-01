@@ -1,4 +1,4 @@
-"""대회 종목군 고정 명단 생성기 (spec R1) — 기준일에 한 번 계산해 버전 관리되는 CSV로 고정합니다.
+"""대회 종목군 고정 명단 생성기 — 기준일에 한 번 계산해 버전 관리되는 CSV로 고정합니다.
 
 인코딩 UTF-8 · 작성 2026-10-01 · 출력 파일은 빌더가 통합문서의 정적 표 `tblContest`로 넣습니다.
 명단은 자동으로 바뀌지 않습니다(쿼리·빌더는 이 CSV만 읽음). 고정 명단을 지키려고 이미 있는 출력 파일은 덮어쓰지 않습니다 —
@@ -48,7 +48,7 @@
   - 출력 파일이 이미 있으면 KIS를 호출하지 않고 종료 코드 5로 끝납니다(--force로만 덮어씀).
 
 사용 예:
-    python excel_dashboard/tools/make_contest_universe.py                     # spec R1 기본값 (출력 파일이 없을 때)
+    python excel_dashboard/tools/make_contest_universe.py                     # 대회 규칙 기본값(docs/business-rules.md의 '대회 종목 명단', 출력 파일이 없을 때)
     python excel_dashboard/tools/make_contest_universe.py --base-date 20260930 ^
         --sessions 20260922,20260923,20260928,20260929,20260930 --mcap-min-eok 1000 --turnover-min-eok 25 ^
         --out %TEMP%/contest_check.csv --audit %TEMP%/contest_audit.csv       # 재현·감사 (고정 명단과 비교)
@@ -75,7 +75,7 @@ DASH = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from kis_dev import KisClient, KisError, TokenError  # noqa: E402
 
-# ---------------------------------------------------------------- 기본값 (spec R1)
+# ---------------------------------------------------------------- 기본값 (대회 규칙: docs/business-rules.md의 '대회 종목 명단')
 DEFAULT_BASE_DATE = "20260930"
 DEFAULT_SESSIONS = "20260922,20260923,20260928,20260929,20260930"
 DEFAULT_MCAP_MIN_EOK = "1000"

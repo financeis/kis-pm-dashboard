@@ -1,4 +1,4 @@
-// T_Est : KIS 추정실적 — FY1·FY2 EPS (spec R9·R20, 2026-10-01 T9) → tblEst  [[전체] 버튼 전용 — mode = full일 때만 KIS 호출]
+// T_Est : KIS 추정실적 — FY1·FY2 EPS (2026-10-01) → tblEst  [[전체] 버튼 전용 — mode = full일 때만 KIS 호출]
 //  - 원천: 국내주식 종목추정실적[국내주식-187] HHKST668300C0, GET /uapi/domestic-stock/v1/quotations/estimate-perform, 입력 SHT_CD = 종목코드.
 //    한국투자증권 리서치의 자체 추정이다(컨센서스 아님 — 이 종목군의 약 21%만 제공). 저장소 예제(chk_estimate_perform.py)의
 //    COLUMN_MAPPING은 ELW 표를 베낀 것이라 틀렸다. 응답 구조(2026-09-30·10-01 실측, 표본 15종목):
@@ -23,7 +23,7 @@
 //      FY1이 없거나(미제공·오래된 추정) FY1 EPS가 없으면(은행 등 output3이 비었거나 1행) FY1·FY1_EPS·FY2·FY2_EPS 모두 빈칸이고
 //      상태 '추정 없음'(정상 값). Fwd EPS·Fwd PER는 이 표에 두지 않는다 — 날짜마다 fnFwdEps(FY1, FY1_EPS, FY2_EPS, 날짜)로 계산한다
 //      (스냅샷 T_EstSnap = 가격기준일, 대회종목 표 = 오늘·기준 세션).
-//  조사 범위 (spec R20, mode = full) — T_Target과 같은 규칙
+//  조사 범위 (mode = full) — T_Target과 같은 규칙
 //    - 주간 = 페이지 행(fnPageRows) 전체 조회 후 모든 행의 전체조사시각 = 지금. 조건: 직전 표에 전체조사시각이 없음(첫 실행),
 //      또는 그 날짜로부터 weekly_days(기본 7)일 이상 지남(날짜 차이로 셈 — 누르는 시각이 달라도 같은 요일이면 돌게),
 //      또는 설정 force_weekly = Y. (force_weekly를 N으로 되돌리는 일은 [전체] 매크로가 한다.)
@@ -34,7 +34,7 @@
 //    - 직전 표 = 자기 표 tblEst → 없거나 비었으면 정적 표 tblEstSeed(이관 때 빌더가 채움) → 없으면 빈 표.
 //    - 같은 [전체] 실행 안에서 다시 평가되면(자기 표의 가장 늦은 조회시각이 tblRunCtl started 이후) 조회하지 않고 자기 표를 돌려준다
 //      — 새로 고침 직후 Excel의 백그라운드 재평가가 매일 조사만큼 KIS를 또 부르는 것을 막음(아래 Main 주석). started가 비면 확인 안 함.
-//    - 기준일 D는 실제 오늘(DateTime.LocalNow)이다. 시험용 시계(tblRunCtl now_override)는 쓰지 않는다(plan §0: T_Sessions·T_PxStore
+//    - 기준일 D는 실제 오늘(DateTime.LocalNow)이다. 시험용 시계(tblRunCtl now_override)는 쓰지 않는다(그 시계는 T_Sessions·T_PxStore
 //      전용). 주간 규칙 시험은 tblEst의 전체조사시각 셀을 바꾸거나 force_weekly·weekly_days 설정으로 한다.
 //  mode가 full이 아니면(build·quick·sector·analysis·빈칸·알 수 없는 값) KIS를 부르지 않고 직전 표(자기 표 → Seed → 빈 표)를
 //    그대로 돌려준다(상태도 그대로, 빈 표도 열은 모두 갖춤). 설정·페이지 행도 읽지 않는다.
@@ -218,7 +218,7 @@ let
     //     (조회가 모두 실패해 직전 표로 돌아간 경우엔 조회시각이 그대로라 막지 못하고 한 번 더 시도한다.)
     //  ③ 이 재평가는 새로 고침 몇 초 뒤에 돈다. 그래서 build 새로 고침 직후 몇 초 안에 mode를 full로 바꿔 새로 고치면 build 쪽
     //     재평가가 full을 보고 함께 조사해 요청이 두 번씩 나가고, 새로 추가한 쿼리의 첫 새로 고침이 full이어도 두 번 평가된다
-    //     (2026-10-01 T9 모의 서버 실측: build 1.1초 뒤 full → 15종목 30건, 10초 뒤 → 15건). [전체]는 빌드(build) 뒤 한참 지나
+    //     (2026-10-01 모의 서버 실측: build 1.1초 뒤 full → 15종목 30건, 10초 뒤 → 15건). [전체]는 빌드(build) 뒤 한참 지나
     //     누르므로 해당 없지만, 시험·매크로에서 T_Est를 build로 새로 고친 바로 뒤에 full로 돌리지 말 것.
     Main = if Mode = "full" and not Surveyed then Survey() else #table(Schema, PrevRows),
     // 실패(토큰·네트워크·설정·모두 실패 등) 시 오류 대화상자 대신 직전 결과를 유지하고, 열 형식을 다시 붙여 날짜 서식을 지킨다

@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
-"""대회종목·업종·테마 값 독립 재계산 (T24 — spec §8 V5).
+"""대회종목·업종·테마 값 독립 재계산.
 
 [전체]를 돌려 저장한 통합문서의 `tblCompany`(대회종목 표)·`tblSectorKRX`·`tblThemeAgg` 값을, Power Query와 다른 경로 —
-**KIS 원천 응답을 파이썬으로 다시 받아 spec 정의대로 계산** — 로 재계산해 칸마다 대조합니다. 통합문서는 Excel로 열지 않고
+**KIS 원천 응답을 파이썬으로 다시 받아 업무 규칙(docs/business-rules.md) 정의대로 계산** — 로 재계산해 칸마다 대조합니다. 통합문서는 Excel로 열지 않고
 파일을 직접 읽습니다(`xlsx_tables`). KIS 호출은 조회 전용 `kis_dev.KisClient`(토큰은 원천 통합문서 파일 파싱, 비밀값 비출력).
 
-재계산 항목 (spec R5~R10·R14·R15)
-- 가격(R5): 일봉(수정주가, FHKST03010100)으로 1D·1W·1M·3M·6M·YTD·1Y(세션 1·5·21·63·126·250 전, YTD = 직전 연도 마지막 세션),
+재계산 항목 (규칙은 docs/business-rules.md)
+- 가격: 일봉(수정주가, FHKST03010100)으로 1D·1W·1M·3M·6M·YTD·1Y(세션 1·5·21·63·126·250 전, YTD = 직전 연도 마지막 세션),
   최근 20일 줄무늬(D-19…D0 일간 등락), 60 완료 세션 평균 거래대금(억)·거래량(천 주), 52주(250세션) 고가 대비, 가격기준일·현재가.
-  세션 달력 = KOSPI(0001) 일별 날짜(FHPTJ04040000) — spec §3.
+  세션 달력 = KOSPI(0001) 일별 날짜(FHPTJ04040000) — docs/business-rules.md의 '용어'.
   시가총액(억) = 현재가 × 상장주식수(주식현재가 시세 FHKST01010100의 lstn_stcn) — 통합문서는 종목 마스터의 상장주식수를 쓰므로 0.5% 허용.
-- 수급(R6): 종목별 투자자매매동향(일별, FHPTJ04160001) 외국인·기관계 최근 1·5·21 완료 세션 합(백만원 ÷ 100 = 억원), 시총 대비 비율.
-- 실적·후행 밸류(R7): 손익계산서·재무비율(분기, 누적 → 분기 단독), 후행 PER·PBR(최근 4개 분기 TTM EPS·최근 분기 BPS — 공개기준일과
+- 수급: 종목별 투자자매매동향(일별, FHPTJ04160001) 외국인·기관계 최근 1·5·21 완료 세션 합(백만원 ÷ 100 = 억원), 시총 대비 비율.
+- 실적·후행 밸류: 손익계산서·재무비율(분기, 누적 → 분기 단독), 후행 PER·PBR(최근 4개 분기 TTM EPS·최근 분기 BPS — 공개기준일과
   무관), PER·PBR 변화 3M·6M·YTD·1Y(분자·분모 모두 공시 지연(1~3분기 + 45일, 4분기 + 90일)으로 '그날 알려진' TTM EPS·BPS),
   최근 분기·YoY 3개·실적 상태·ROE.
-- 목표주가(R8): 종목투자의견(FHKST663300C0, 날짜 분할로 기간 전체) → 기준일 D·D−1개월·D−3개월 컨센서스(증권사별 6개월 내 마지막 목표가 평균),
+- 목표주가: 종목투자의견(FHKST663300C0, 날짜 분할로 기간 전체) → 기준일 D·D−1개월·D−3개월 컨센서스(증권사별 6개월 내 마지막 목표가 평균),
   괴리율·증권사 수·목표가 변화 1M·3M·최근 의견.
-- KIS 추정(R9): 종목추정실적(HHKST668300C0) EPS ÷ 10·연도는 output4 dt 라벨, Fwd EPS = FY1 × r/12 + FY2 × (12 − r)/12,
+- KIS 추정: 종목추정실적(HHKST668300C0) EPS ÷ 10·연도는 output4 dt 라벨, Fwd EPS = FY1 × r/12 + FY2 × (12 − r)/12,
   Fwd PER과 변화 1W·1M(스냅샷 tblEstSnap의 [B−3세션, B] 행 → 없으면 추정일 < B일 때 기준일 가중치로 재구성 → 그 밖 공란).
-- 신용·공매도·대차(R10): 신용잔고 일별(FHPST04760000)·공매도 일별(FHPST04830000)·대차 일별(HHPST074500C0) → 신용잔고율·1M 변화(%p),
+- 신용·공매도·대차: 신용잔고 일별(FHPST04760000)·공매도 일별(FHPST04830000)·대차 일별(HHPST074500C0) → 신용잔고율·1M 변화(%p),
   공매도 거래대금 비중 5 완료 세션 평균, 대차잔고(주수) 1M 변화율, 기준일.
-- KRX 업종(R14): 업종별 FHPTJ04040000 → 지수·기간 등락·외국인/기관/개인 순매수 1D·1W·1M(완료 세션, 억원).
-- 테마 집계(R15): 통합문서 tblCompany의 대회 행으로 대테마·세부테마별 시가총액 가중 등락·상승 비율·수급 %를 다시 계산.
+- KRX 업종: 업종별 FHPTJ04040000 → 지수·기간 등락·외국인/기관/개인 순매수 1D·1W·1M(완료 세션, 억원).
+- 테마 집계: 통합문서 tblCompany의 대회 행으로 대테마·세부테마별 시가총액 가중 등락·상승 비율·수급 %를 다시 계산.
 
     python excel_dashboard/tools/verify_recalc.py --workbook <저장한.xlsm> --token-source <원천.xlsm> \\
         [--codes 005930 000660 …] [--n 12] [--sectors 0013 0021 1012] [--json 결과.json] [--csv 대조표.csv]
@@ -226,9 +226,9 @@ class Source:
         return b.get("output") or []
 
 
-# ------------------------------------------------------------------------------------------------- 재계산 (spec 정의)
+# ------------------------------------------------------------------------------------------------- 재계산 (업무 규칙 정의)
 def px_metrics(bars: list[dict], cal: list[dt.date], now: dt.datetime) -> dict:
-    """R5 가격 지표. 세션 위치는 달력(KOSPI 날짜) 기준, 봉은 달력 날짜만 쓴다."""
+    """가격 지표. 세션 위치는 달력(KOSPI 날짜) 기준, 봉은 달력 날짜만 쓴다."""
     pos = {d: i for i, d in enumerate(cal)}
     by = {b["d"]: b for b in bars if b["d"] in pos}
     if not by:
@@ -266,7 +266,7 @@ def px_metrics(bars: list[dict], cal: list[dt.date], now: dt.datetime) -> dict:
 
 
 def flow_metrics(rows: list[dict], today: dt.date, now: dt.datetime) -> dict:
-    """R6 완료 세션 순매수 합(억원). 시세가 없는 행(상장 전)·상장일(순매수 0)·장 마감 전 오늘 행은 세지 않는다."""
+    """종목 수급: 완료 세션 순매수 합(억원). 시세가 없는 행(상장 전)·상장일(순매수 0)·장 마감 전 오늘 행은 세지 않는다."""
     recs = []
     seen = set()
     for r in rows:
@@ -443,7 +443,7 @@ def est_parse(body: dict, today: dt.date) -> dict:
 
 
 def csl_metrics(cr: list, sh: list, ln: list, today: dt.date) -> dict:
-    """R10. 신용잔고율(최신)·1M(21세션 전) 변화 %p, 공매도 비중 = 완료 세션 5개 평균(공매도 거래대금 ÷ 거래대금), 대차잔고 주수 1M 변화율."""
+    """신용·공매도·대차: 신용잔고율(최신)·1M(21세션 전) 변화 %p, 공매도 비중 = 완료 세션 5개 평균(공매도 거래대금 ÷ 거래대금), 대차잔고 주수 1M 변화율."""
     def uniq(rows, key):
         seen, out = set(), []
         for r in rows:
@@ -735,7 +735,7 @@ def main() -> int:
         for f in ("신용잔고율", "신용잔고율1M변화", "공매도비중5일", "대차잔고1M변화율", "신용기준일"):
             rep.add("신용·공매도·대차(R10)", code, f, cm.get(f), w.get(f))
 
-    # KRX 업종 (R14)
+    # KRX 업종
     sec_rows = {r["코드"]: r for r in T["tblSectorKRX"] if r.get("코드")}
     sectors = a.sectors or (["0013", "0021"] + [c for c, r in sorted(sec_rows.items()) if r.get("시장") == "KOSDAQ" and r.get("구분") == "업종"][:1])
     for sc in sectors:
@@ -747,7 +747,7 @@ def main() -> int:
         for f in ["기준일", "지수", "1D", "1W", "1M", "3M", "6M", "YTD", "1Y"] + [f"{c}{p}억" for c in ("외국인", "기관", "개인") for p in ("1D", "1W", "1M")]:
             rep.add("KRX 업종(R14)", f"{sc} {w.get('업종명')}", f, m.get(f), w.get(f))
 
-    # 테마 집계 (R15) — 통합문서 tblCompany 대회 행으로 다시 계산
+    # 테마 집계 — 통합문서 tblCompany 대회 행으로 다시 계산
     rows = [r for r in T["tblCompany"] if r.get("유니버스") == "대회" and r.get("대테마")]
     agg = {(r.get("단계"), r.get("대테마"), r.get("세부테마") or None): r for r in T["tblThemeAgg"]}
     caps = defaultdict(float)

@@ -1,4 +1,4 @@
-"""대회 종목 기본 테마표 작성 보조 도구 (spec R3) — 검증(check)과 분류용 참고 목록 추출(extract).
+"""대회 종목 기본 테마표 작성 보조 도구 — 검증(check)과 분류용 참고 목록 추출(extract).
 
 인코딩 UTF-8 · 작성 2026-10-01 · 대상 파일 excel_dashboard/data/themes_base.csv (빌더가 정적 표 `tblThemeBase`로 넣음)
 
@@ -47,7 +47,7 @@ THEME_COLUMNS = ["종목코드", "종목명", "대테마", "세부테마", "근�
 CODE_RE = re.compile(r"[0-9A-Z]{6}")
 UTF8_BOM = b"\xef\xbb\xbf"
 
-# 규모 기준 (spec R3, 조정 가능 — 벗어나면 안내만 함)
+# 규모 기준 (대테마·세부테마 개수, 조정 가능 — 벗어나면 안내만 함)
 MAJOR_RANGE = (10, 20)
 MINOR_RANGE = (40, 80)
 RATIONALE_WARN_LEN = 60          # 근거가 이보다 길면 안내 (한 줄 요약 유지)

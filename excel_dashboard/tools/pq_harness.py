@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Power Query 단위 시험 하네스 (T0, 2026-10-01) — 전체 빌드 없이 `.pq` 쿼리를 실제 KIS API로 시험합니다.
+"""Power Query 단위 시험 하네스 (2026-10-01) — 전체 빌드 없이 `.pq` 쿼리를 실제 KIS API로 시험합니다.
 
 새(숨김) Excel 인스턴스에 지정한 쿼리와 그 의존 쿼리(`fn*` 등)를 넣고, 정적 입력표와 토큰 표를 만든 뒤
 쿼리를 **지정한 순서로** 표에 적재·동기 새로 고침하고 결과(행 수·열·앞부분·`상태` 요약·오류)를 보여 줍니다.
@@ -106,7 +106,7 @@ Python API (스크래치 스크립트에서)
   의존 쿼리로 보고 먼저 넣습니다(재귀). `T_Token`이 걸리면 거부합니다.
 - 기본 정적 표(각자 자기 이름의 시트 B2, 토큰 표만 `_sys`): tblSettings(`build_dashboard.settings_rows` 기본값),
   tblWatch·tblTrades(기본 빈 표, sample=True면 빌더 샘플), tblMacro, tblHolidays, tblRunCtl(mode=build, started·now_override 빈칸),
-  tblContest·tblThemeBase·tblOverride(계획 §0 인터페이스 열의 빈 표). 빈 표는 빌더처럼 빈 행 1개를 가집니다.
+  tblContest·tblThemeBase·tblOverride(docs/contracts.md의 열을 갖춘 빈 표). 빈 표는 빌더처럼 빈 행 1개를 가집니다.
   `static()`으로 같은 이름을 주면 교체합니다. `*Seed` 표는 지정할 때만 만듭니다.
 - 값 형식: 문자열 → 텍스트(셀 서식 @, 선행 0 유지), 숫자 → 숫자, 날짜·일시 → Excel 일련번호 + 날짜 서식(파워 쿼리에서 datetime).
   CSV는 열 이름이 `코드`로 끝나거나 0으로 시작하는 숫자가 하나라도 있는 열을 텍스트로 두고, 나머지 칸은 위 '값 표기'로 변환합니다.
@@ -165,7 +165,7 @@ DATA_STYLE: str = "TableStyleLight1"
 DEFAULT_CELL: str = "B2"
 REDACTED: str = "<토큰 가림>"
 
-# 계획 §0 인터페이스 표 (기본은 빈 표 — 내용은 static()으로 CSV를 넣어 교체)
+# 입력 계약 표(docs/contracts.md) (기본은 빈 표 — 내용은 static()으로 CSV를 넣어 교체)
 PLAN_EMPTY_TABLES: dict[str, list[str]] = {
     "tblContest": ["종목코드", "종목명", "시장", "시가총액_0930_억", "평균거래대금_5일_억", "거래일수", "상장주식수", "비고"],
     "tblThemeBase": ["종목코드", "종목명", "대테마", "세부테마", "근거"],
@@ -791,7 +791,7 @@ class _TableDict(dict):
 
 
 class StandInBuilder:
-    """페이지 빌더 대역 — `build(builder)`에 넘기는 최소 객체 (계획 §0 페이지 빌더 모듈 약속).
+    """페이지 빌더 대역 — `build(builder)`에 넘기는 최소 객체 (pages/AGENTS.md의 페이지 모듈 계약).
 
     속성: wb, xl, pid, ws(시트 dict, 없는 시트 자동 생성), lo(표 dict, 나중에 생긴 표도 찾음), table_style,
           HEADER_RIGHT, HEADER_STATUS, log, out(저장 경로)

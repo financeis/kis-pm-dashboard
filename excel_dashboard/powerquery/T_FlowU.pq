@@ -1,4 +1,4 @@
-// T_FlowU : 종목별 투자자 순매수 — 외국인·기관계 1D·1W·1M (억원), 행 = 페이지 행 fnPageRows() (spec R6, 2026-10-01 T6) → 표 tblFlowU
+// T_FlowU : 종목별 투자자 순매수 — 외국인·기관계 1D·1W·1M (억원), 행 = 페이지 행 fnPageRows() (2026-10-01) → 표 tblFlowU
 //  [종목별 투자자매매동향(일별)] FHPTJ04160001  /uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily
 //  - 호출: 종목당 1회. FID_COND_MRKT_DIV_CODE=J, FID_INPUT_ISCD=종목코드, FID_INPUT_DATE_1=조회일, FID_ORG_ADJ_PRC·FID_ETC_CLS_CODE=공백.
 //    output2 = 조회일 '이하' 30세션(최신순, 연속 조회 없음). output1(현재가 요약)은 쓰지 않음. 조회일은 주말·휴일이어도 되고
@@ -15,7 +15,7 @@
 //      · 신규 상장: 상장 전 날짜는 시세 빈칸·순매수 0, 상장일 행은 시세·거래량은 있는데 순매수가 0(투자자별 자료 없음; 2026-09 상장 4종목 실측)
 //        → 더 과거에 시세 없는 행이 있는 가장 오래된 시세 행은 상장일로 보고(순매수 세 값이 모두 0일 때만) 합계에서 뺀다.
 //        세션이 모자라면 해당 열은 빈칸: 1W는 5세션, 1M은 21세션이 있어야 함(합계 칸 안에 빈 값이 있어도 빈칸 — 0으로 채우지 않음)
-//  - 완료 세션 (spec R6): 오늘 행은 15:30(장 마감) 전에는 쓰지 않음. 그리고 이 API는 오늘 날짜를 15:40 전에는 거절한다
+//  - 완료 세션: 오늘 행은 15:30(장 마감) 전에는 쓰지 않음. 그리고 이 API는 오늘 날짜를 15:40 전에는 거절한다
 //    (rt_cd 2 OPSQ2001 "TIME LIMIT 00:00 ~ 15:40"; 미래 날짜는 "must be before today" — 2026-10-01 11:36 실측) → 요청일 = 15:40 이후 오늘, 그 전 어제.
 //    15:40 이후에도 오늘 날짜가 OPSQ2001로 거절되면(시계 차이 등) 첫 종목으로 한 번 확인해 모든 종목을 어제 기준으로 호출한다.
 //    오늘 행이 와도 외국인·기관계·개인 순매수가 모두 0·빈칸이면(집계 전) 쓰지 않음. 따라서 장중과 15:30~15:40에는 직전 세션까지이고
@@ -99,7 +99,7 @@ let
             Now = DateTime.LocalNow(),
             Today = Date.From(Now),
             Yesterday = Date.AddDays(Today, -1),
-            Completed = Time.From(Now) >= #time(15, 30, 0),    // 오늘 세션 완료(장 마감 15:30, spec R6)
+            Completed = Time.From(Now) >= #time(15, 30, 0),    // 오늘 세션 완료(장 마감 15:30)
             AskToday = Time.From(Now) >= #time(15, 40, 0),     // API가 오늘 날짜를 받는 시각(그 전은 OPSQ2001)
             Path = "/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily",
             Codes = List.Buffer(List.Distinct(fnPageRows()[종목코드])),
