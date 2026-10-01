@@ -1,4 +1,4 @@
-// fnKisGetPage : KIS REST GET 한 쪽 — 연속 조회(tr_cont 요청 헤더)가 필요한 API용 (spec R11, 2026-10-01 T11)
+// fnKisGetPage : KIS REST GET 한 쪽 — 연속 조회(tr_cont 요청 헤더)가 필요한 API용 (2026-10-01)
 //  - fnKisGet과 같은 헤더·재시도 규칙(설정·토큰 문제는 재시도 없이 즉시 오류, EGW00201만 짧은 백오프로 최대 5회,
 //    네트워크 오류는 1회)에 요청 헤더 tr_cont만 더한다. fnKisGet은 이 헤더를 보내지 못한다.
 //  - 반환: 응답 본문 레코드(rt_cd = 0 확인됨). rt_cd <> "0"이면 KIS 메시지를 담은 오류.

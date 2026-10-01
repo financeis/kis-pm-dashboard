@@ -6,7 +6,7 @@
     python excel_dashboard/build_dashboard.py --migrate-from D:/old/KIS_PM_Dashboard.xlsx   # 이관 원본 지정
     python excel_dashboard/build_dashboard.py --no-migrate                # 이관 없이 새로 만듦(기존 파일은 백업)
 
-- 이관(spec R22): 원본 = --migrate-from > 출력 위치의 .xlsm > 같은 위치의 .xlsx. 원본은 Excel로 열지 않고 파일을 직접 읽는다
+- 이관: 원본 = --migrate-from > 출력 위치의 .xlsm > 같은 위치의 .xlsx. 원본은 Excel로 열지 않고 파일을 직접 읽는다
   (migrate.py — 열면 '파일 열 때 새로 고침'으로 토큰이 새로 발급될 수 있음). 빌드 전에 원본을 backup\\<이름>_YYYYMMDD_HHMMSS로
   복사하고, 매매일지·관심종목·설정(키별)·해외지표·휴장일·수정표·스냅샷·가격 저장소·세션 달력·주간 캐시·토큰 캐시를 옮긴다.
   이관할 입력이 있으면 샘플을 넣지 않는다. 원본이 .xlsx였으면 성공 뒤 백업 폴더로 옮긴다. 원본을 못 읽으면 멈춘다.
@@ -51,7 +51,7 @@ VBA_FILES = [os.path.join(HERE, "vba", "mod_refresh.bas")]
 CONTEST_CSV = os.path.join(HERE, "data", "contest_universe_20260930.csv")
 THEMES_CSV = os.path.join(HERE, "data", "themes_base.csv")
 BUILD_TMP_DIR = ".build_tmp"     # 출력 폴더 아래 작업 폴더: 같은 파일 이름으로 만들어(차트의 이름 참조 유지) 성공하면 옮김
-TOKEN_MIN_MINUTES = 210          # 원천 토큰 남은 시간 기준(3시간 30분) — T_Token 재발급 기준(3시간)보다 길게(plan §0)
+TOKEN_MIN_MINUTES = 210          # 원천 토큰 남은 시간 기준(3시간 30분) — T_Token 재발급 기준(3시간)보다 길게 잡아 빌드 결과물도 발급 없이 재사용(docs/security.md의 '개발 중 토큰 규칙')
 
 
 def col_letter(n: int) -> str:
@@ -65,7 +65,7 @@ def col_letter(n: int) -> str:
 # 페이지 모듈 (pages/*.py) — 시트 순서대로. 각 모듈: SHEET, LOADS = [(쿼리, 표, 머리글 셀)], build(builder), prepare_tables(builder)
 PAGE_MODULES = [page_sector, page_company, page_analysis, page_news_events]
 
-# 시트 순서 (spec R19): 보이는 시트 15개(새 페이지 4개는 시장 다음) + 숨김 시트.
+# 시트 순서: 보이는 시트 15개(새 페이지 4개는 시장 다음) + 숨김 시트.
 #   _data 기존 PQ 원본 · _sys 토큰 캐시 · _calc 버튼 전용 계산·캐시 표(+ 증시 자금) · _store 가격 이력 저장소(약 13만 행이라 따로) ·
 #   _seed 빌더가 만드는 정적 표(대회 명단·기본 테마표·실행 제어·이관 Seed)
 SHEETS = ["대시보드", "시장", page_sector.SHEET, page_company.SHEET, page_analysis.SHEET, page_news_events.SHEET,
@@ -97,7 +97,7 @@ LOADS = [
 # 가격 저장소(약 13만 행)는 _store 시트에 따로. 이 표들과 페이지 표에는 임시 행·행 추가/삭제를 하지 않는다(표 행 삭제가
 # 같은 열의 셀을 끌어올리고, 쌓인 페이지 표에서는 Excel이 행 추가를 거부함 — 페이지 작업 실측).
 CALC_SPACING = 45
-# 증시 자금(R13, 새 일반 쿼리 — [시장]이 구조적 참조로 읽으므로 시트는 상관없음)도 _calc 끝에 둔다. _data의 기존 표 오른쪽(EL2)에
+# 증시 자금(새 일반 쿼리 — [시장]이 구조적 참조로 읽으므로 시트는 상관없음)도 _calc 끝에 둔다. _data의 기존 표 오른쪽(EL2)에
 # 두면 빌드가 tblPositions(_data 맨 오른쪽 DP2)에 계산열을 덧붙일 때 Excel이 그 행들의 오른쪽 칸을 밀어야 해서 '표에 있는 셀이
 # 이동될 수 있기 때문에 이 작업은 수행되지 않습니다'로 실패한다(2026-10-01 빌드 실측). _data 안에는 8열이 들어갈 빈틈도 없다.
 _CALC_TABLES = [("T_Class", "tblClass"), ("T_Sessions", "tblSessions"), ("T_PxMetrics", "tblPxMetrics"), ("T_FlowU", "tblFlowU"),
@@ -107,7 +107,7 @@ HIDDEN_LOADS = ([(q, "_calc", f"{col_letter(2 + k * CALC_SPACING)}2", t) for k, 
                 + [("T_PxStore", "_store", "B2", "tblPxStore")])
 EXTRA_LOADS = HIDDEN_LOADS
 
-# 버튼 전용 쿼리(spec R20): '모두 새로 고침'에서 제외(연결 속성 RefreshWithRefreshAll = False), 파일 열 때 새로 고침 없음.
+# 버튼 전용 쿼리: '모두 새로 고침'에서 제외(연결 속성 RefreshWithRefreshAll = False), 파일 열 때 새로 고침 없음.
 # 빌드·수동 새로 고침에서는 tblRunCtl mode = build라 KIS를 부르지 않는다. 일반 쿼리 = 기존 15개 + T_News + T_MktFunds
 BUTTON_QUERIES = frozenset(["T_Class", "T_Sessions", "T_PxStore", "T_PxMetrics", "T_FlowU", "T_Fin", "T_Target", "T_Est",
                             "T_EstSnap", "T_CSL", "T_Events", "T_SectorKRX", "T_Company", "T_ThemeAgg"]
@@ -126,7 +126,7 @@ BUILD_REFRESH_ORDER = (["tblToken", "tblClass", "tblUniverse",
 
 # 실행 제어 표 tblRunCtl (VBA mod_refresh가 읽고 씀). 값 열은 일반 서식(텍스트 서식이면 started가 글자로 저장됨), mode 말고는 빈칸
 RUNCTL_ROWS = [("mode", "build"), ("started", None), ("now_override", None), ("quiet", None), ("last_summary", None)]
-# 빌드 결과 계약 점검(spec §5 이름·R16~R20 버튼) — 없으면 빌드 실패(저장된 결과물을 출력 위치로 옮기지 않음)
+# 빌드 결과 계약 점검(docs/contracts.md의 이름 정의·버튼) — 없으면 빌드 실패(저장된 결과물을 출력 위치로 옮기지 않음)
 REQUIRED_NAMES = ["시세_최근조회", "시세_상태", "전체_최근조회", "전체_상태", "업종_최근조회", "업종_상태",
                   "분석_최근조회", "분석_상태", "분석코드", "대회코드목록"]
 REQUIRED_BUTTONS = [(page_company.SHEET, "btn_RefreshQuick", "RefreshQuick"), (page_company.SHEET, "btn_RefreshFull", "RefreshFull"),
@@ -188,7 +188,7 @@ VS_FILE_NAME = "수집기업_valuesearch.xlsx"   # NICS 분류 원천(VALUESearc
 
 
 def default_vs_path() -> str:
-    """설정 vs_path 기본값: 이 체크아웃이 속한 **주 저장소** 루트의 수집기업_valuesearch.xlsx 절대 경로 (spec R2).
+    """설정 vs_path 기본값: 이 체크아웃이 속한 **주 저장소** 루트의 수집기업_valuesearch.xlsx 절대 경로.
 
     git 워크트리에서 빌드해도 사용자 파일이 있는 주 저장소를 가리키도록 `git rev-parse --git-common-dir`
     (주 저장소의 .git 폴더)의 상위 폴더를 쓴다. git이 없거나 실패하면 이 체크아웃의 루트(excel_dashboard의
@@ -215,7 +215,7 @@ def default_vs_path() -> str:
 def settings_rows(cfg_path: str, sample: bool):
     start = dt.date(2026, 9, 1) if sample else dt.date.today()
     end = dt.date(2026, 10, 30) if sample else dt.date.today() + dt.timedelta(days=61)
-    # 새 키(spec §5·R2, 2026-10-01 T22)는 맨 뒤에 붙인다 — build_inputs의 검증 목록이 행 위치(5·18·19행)로 걸려 있음
+    # 나중에 더한 키는 맨 뒤에 붙인다 — build_inputs의 검증 목록이 행 위치(5·18·19행)로 걸려 있음
     return [
         ("cfg_path", "KIS 설정파일 경로", cfg_path, "앱키·시크릿을 읽을 kis_devlp.yaml 위치 (키는 통합문서에 저장하지 않음)"),
         ("start_date", "대회 시작일", start, "★ 실제 대회 시작일로 변경 (샘플: 2026-09-01)" if sample else "★ 대회 시작일"),
@@ -296,21 +296,26 @@ F_WATCH_NAME = ('=IF([@종목코드]="","",IFERROR(XLOOKUP(' + F_TRADE_CODE +
 F_TRADE_CHK = ('=IF([@종목코드]="","",LET(e,XLOOKUP(' + F_TRADE_CODE + ',tblUniverse[종목코드],tblUniverse[대회편입],"X"),'
                'IF(e="X","⚠ 종목DB에 없는 코드",IF(e="N","⚠ 대회 종목 아님",IF(OR([@구분]="매수",[@구분]="매도"),"✓","⚠ 구분 확인")))))')
 
-# [설정] 시트 배치 — 기본 설정 표(B6, 29행 → B6:E35) 아래로 기존 안내 문구를 옮기고, ⑤ 수정표(spec R4)는 ④ 휴장일 오른쪽의
+# [설정] 시트 배치 — 기본 설정 표(B6, 29행 → B6:E35) 아래로 기존 안내 문구를 옮기고, ⑤ 수정표는 ④ 휴장일 오른쪽의
 # 빈 열 묶음(W:AD)에 둔다. 다른 입력표(B:E·G:L·N:R·T:U) 아래에 두면 그 표의 행 삭제·삽입이 "표의 셀이 이동될 수 있어
 # 수행되지 않습니다"로 막힌다(Excel은 아래쪽 표 일부만 미는 이동을 거부 — 하네스에서 관심종목 행 삭제로 확인).
 SETTINGS_NOTE_ROW = 37            # 기존 B28·B29 안내 문구가 옮겨 오는 첫 행(설정표와 겹치지 않게), 그 다음 행은 ⑤로 가는 링크
 OVERRIDE_TITLE_CELL = "W5"        # ⑤ 수정표 제목(①~④ 제목과 같은 5행), W6·W7은 사용법 안내
 OVERRIDE_WARN_CELL = "AB5"        # 무시된 수정표 행 경고 칸(F_OVERRIDE_WARN) — 수정표 바로 위 제목 줄 오른쪽
-OVERRIDE_ANCHOR = "W8"            # tblOverride 머리글 왼쪽 위 칸(build_inputs가 빈 표로 만듦, 사용자 행 이관은 T23)
+OVERRIDE_ANCHOR = "W8"            # tblOverride 머리글 왼쪽 위 칸(build_inputs가 빈 표로 만듦, 사용자 행은 이관 단계에서 옮김)
 OVERRIDE_HEADERS = ["종목코드", "대회편입", "대테마", "세부테마", "NICS 대분류", "NICS 업종", "NICS 세부", "메모"]
 OVERRIDE_WIDTHS = [10, 9, 12, 14, 12, 14, 16, 24]   # W:AD 열 너비 (V열은 3폭 여백)
-# 수정표에서 무시되는 행 수 경고: fnClassify와 같은 정규화(앞뒤 공백 제거·대문자·숫자만 6자리 미만이면 앞 0 채움) 뒤
+# 수정표에서 무시되는 행 수 경고: fnClassify와 같은 정리·정규화(U+00A0·U+3000 → 공백, 코드 0~31 문자 제거, 앞뒤 공백 제거,
+# 대문자, 숫자만 6자리 미만이면 앞 0 채움) 뒤
 #  ① 종목코드가 6자리 [0-9A-Z]가 아님(빈 코드 포함) ② 대회편입이 공란·추가·제외가 아님 ③ 종목DB(tblUniverse)에 없는 코드
-#  중 하나인 행을 센다. 메모만 있는 행·완전히 빈 행은 세지 않는다. 없으면 빈칸.
+#  중 하나인 행을 센다(fnClassify가 무시하는 행과 같다). ③은 종목DB에 종목코드가 하나라도 있을 때만 본다 — fnClassify도 종목DB가
+#  비었으면 종목DB 확인을 하지 않는다. 메모만 있는 행·완전히 빈 행은 세지 않는다. 없으면 빈칸.
+#  U+00A0은 UNICHAR(160)으로 찾는다 — 한국어 Excel의 CHAR(160)은 코드 페이지 949 기준이라 일반 공백(UNICODE 32)을 돌려줘
+#  U+00A0을 바꾸지 못한다(2026-10-02 하네스 실측).
 F_OVERRIDE_WARN = (
-    '=LET(x_cln,LAMBDA(v_x,IFERROR(TRIM(CLEAN(SUBSTITUTE(SUBSTITUTE(v_x&"",CHAR(160)," "),UNICHAR(12288)," "))),"")),'
+    '=LET(x_cln,LAMBDA(v_x,IFERROR(TRIM(CLEAN(SUBSTITUTE(SUBSTITUTE(v_x&"",UNICHAR(160)," "),UNICHAR(12288)," "))),"")),'
     'x_has,LAMBDA(s_x,k_x,IF(LEN(s_x)=0,FALSE,AND(ISNUMBER(FIND(MID(s_x,SEQUENCE(LEN(s_x)),1),k_x))))),'
+    'x_u,SUM(--(LEN(tblUniverse[종목코드]&"")>0)),'
     'x_bad,MAP(tblOverride[종목코드],tblOverride[대회편입],tblOverride[대테마],tblOverride[세부테마],'
     'tblOverride[NICS 대분류],tblOverride[NICS 업종],tblOverride[NICS 세부],'
     'LAMBDA(a_1,a_2,a_3,a_4,a_5,a_6,a_7,LET(s_0,UPPER(x_cln(a_1)),'
@@ -318,7 +323,7 @@ F_OVERRIDE_WARN = (
     'm_0,x_cln(a_2),n_e,LEN(s_0&m_0&x_cln(a_3)&x_cln(a_4)&x_cln(a_5)&x_cln(a_6)&x_cln(a_7))>0,'
     'v_c,AND(LEN(s_1)=6,x_has(s_1,"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")),'
     'v_m,OR(m_0="",m_0="추가",m_0="제외"),'
-    'i_u,IF(v_c,ISNUMBER(XMATCH(s_1,tblUniverse[종목코드])),FALSE),'
+    'i_u,IF(v_c,OR(x_u=0,ISNUMBER(XMATCH(s_1,tblUniverse[종목코드]))),FALSE),'
     'AND(n_e,NOT(AND(v_c,v_m,i_u)))))),'
     'x_n,SUM(--x_bad),IF(x_n=0,"","⚠ 수정표 "&x_n&"행 무시됨(종목코드·값 확인)"))'
 )
@@ -327,7 +332,7 @@ F_OVERRIDE_WARN = (
 RANK_STAR = 'IF(tblRank[대회]="★","★","")'
 NONCONTEST_GREY = "#9AA2AD"       # 대회 밖 종목 글꼴(보유·관심 파란 굵은 글씨 규칙이 우선)
 MKT_RANK_TOP = 60                 # [시장] 순위 6블록 시작 행 (2열 × 3행, 블록당 12열)
-MKT_FUNDS_TOP = 116               # [시장] 증시 자금 동향 구역 시작 행 (spec R13)
+MKT_FUNDS_TOP = 116               # [시장] 증시 자금 동향 구역 시작 행
 
 
 def sample_trades():
@@ -648,7 +653,7 @@ class Builder:
         self.log.append(msg)
 
     def run(self, resume: str | None = None, checkpoint: str | None = None):
-        """Excel 시작~종료 전체를 access_vbom으로 감싼다(Excel은 AccessVBOM을 인스턴스 시작 때 읽음 — T4 실측).
+        """Excel 시작~종료 전체를 access_vbom으로 감싼다(Excel은 AccessVBOM을 인스턴스 시작 때 읽음 — 실측, docs/engineering-notes.md의 'AccessVBOM 읽는 시점').
         레지스트리는 성공·실패와 관계없이 원래 상태로 되돌리고 그 결과를 로그에 남긴다."""
         t0 = time.time()
         with access_vbom(log=self.say, lock_path=self.vbom_lock, owner="build_dashboard") as vbom:
@@ -751,7 +756,7 @@ class Builder:
 
     # -------------------------------------------------------------------------------------------------------
     def merged_settings(self) -> list[tuple]:
-        """설정 표 행 (키, 항목, 값, 설명). 이관 원본이 있으면 기존 키는 사용자 값을 유지하고 새 키는 기본값을 더한다(spec R22).
+        """설정 표 행 (키, 항목, 값, 설명). 이관 원본이 있으면 기존 키는 사용자 값을 유지하고 새 키는 기본값을 더한다(docs/business-rules.md의 '사용자 데이터 보존').
         순서는 빌더 순서(숫자 서식·검증 목록이 키로 찾음), 원본에만 있는 키는 뒤에 그대로 붙인다(사용자 데이터 보존).
         cfg_path는 --cfg를 직접 준 경우에만 그 값으로 바꾼다."""
         base = settings_rows(self.cfg_path, self.sample)
@@ -841,7 +846,7 @@ class Builder:
         format_dates(lo, hrows, ["휴장일", "설명"], skip=("휴장일",))
         self.lo["tblHolidays"] = lo
 
-        # ⑤ 수정표 tblOverride(spec R4): ④ 오른쪽의 빈 열 묶음 W:AD(종목코드는 텍스트). 이관 원본의 행을 그대로 옮기고(R22),
+        # ⑤ 수정표 tblOverride: ④ 오른쪽의 빈 열 묶음 W:AD(종목코드는 텍스트). 이관 원본의 행을 그대로 옮기고,
         # 없으면 빈 표(머리글 + 빈 행 1개). 제목·사용법·경고 칸은 build_settings_sheet
         anchor = ws.Range(OVERRIDE_ANCHOR)
         ws.Columns(anchor.Column - 1).ColumnWidth = 3
@@ -885,7 +890,7 @@ class Builder:
 
     # -------------------------------------------------------------------------------------------------------
     def build_static_tables(self):
-        """숨김 시트 _seed의 정적 표(Power Query가 아니라 빌더가 쓰는 표 — spec §5: 상태·조회시각 열 없음).
+        """숨김 시트 _seed의 정적 표(Power Query가 아니라 빌더가 쓰는 표 — 상태·조회시각 열 없음).
 
         tblRunCtl(실행 제어 키/값, mode = build) · tblContest(대회 명단, data CSV) · tblThemeBase(기본 테마표, data CSV) ·
         Seed 표(이관한 저장소 이력 — 자기참조 쿼리가 자기 표가 비었을 때 읽음). 표마다 열 1칸 띄워 2행에 나란히 둔다.
@@ -955,7 +960,7 @@ class Builder:
         T_Token 식을 잠시 임시 정적 표를 읽는 식으로 바꿔 한 번 새로 고친 뒤 원래 식으로 되돌리고 임시 표를 지운다.
         토큰 값은 메모리 → 임시 표 칸 → tblToken 칸으로만 가고, 로그에는 남은 분만 쓴다. 넣지 못하면 빌드를 멈춘다."""
         if self.seed_token:
-            self.seed_token_cache()                     # 개발용 옛 경로(JSON) — 쓰지 않는 것을 권장(handoff 게이트 3)
+            self.seed_token_cache()                     # 개발용 옛 경로(JSON 파일) — 쓰지 않는 것을 권장(정식 경로는 원천 통합문서를 파싱해 메모리로만 옮기기, docs/security.md)
         elif self.token is None:
             self.say("⚠ 이관할 토큰 캐시 없음 — 첫 새로 고침에서 T_Token이 새 토큰을 발급합니다(KIS 알림톡 1건)")
         else:
@@ -1125,7 +1130,7 @@ class Builder:
                 self.say(f"⚠ {own}이(가) 비어 있어 {seed}({n_seed}행)를 그대로 둡니다 — 버튼 실행 때 다시 읽습니다")
 
     def exclude_button_queries(self):
-        """버튼 전용 쿼리를 '모두 새로 고침'에서 뺀다(spec R20: 연결 속성 '모두 새로 고침 시 이 연결 새로 고침' 해제)·파일 열 때
+        """버튼 전용 쿼리를 '모두 새로 고침'에서 뺀다(연결 속성 '모두 새로 고침 시 이 연결 새로 고침' 해제)·파일 열 때
         새로 고침 없음. 일반 쿼리(기존 + T_News + T_MktFunds)는 포함 그대로. T_Token의 파일 열 때·30분 확인은 유지."""
         n_ex, n_in = 0, 0
         for tname, q in self.query_of.items():
@@ -1288,7 +1293,7 @@ class Builder:
 
     # -------------------------------------------------------------------------------------------------------
     def nav_links(self, ws, row: int, start_col: int = 2):
-        """상단 메뉴 줄: 보이는 시트 15개(spec R19 순서 — 새 페이지 업종·대회종목·종목분석·뉴스·이벤트 포함)를 2열 간격으로.
+        """상단 메뉴 줄: 보이는 시트 15개(SHEETS 순서 — 새 페이지 업종·대회종목·종목분석·뉴스·이벤트 포함)를 2열 간격으로.
         링크가 늘어 기존 메뉴 띠보다 길어지면 마지막 링크 뒤 칸까지 띠 색을 칠한다(밝은 글자가 흰 바탕에 묻히지 않게).
         대회종목 페이지는 이 링크를 읽어 자기 열 폭에 맞게 다시 놓는다(page_company._nav_row)."""
         c = start_col
@@ -1431,7 +1436,7 @@ class Builder:
         style_axes(ch, y_nf="0.0%", x_nf="mm/dd", legend=None)
 
         ws.Rows(48).RowHeight = 8
-        # 시장 주도주 3종 — 시장 전체 개별종목(spec R19). 종목명 옆 칸 ★ = 대회 종목, 대회 밖은 회색 글꼴,
+        # 시장 주도주 3종 — 시장 전체 개별종목. 종목명 옆 칸 ★ = 대회 종목, 대회 밖은 회색 글꼴,
         # 보유·관심 파란 굵은 글씨가 회색보다 우선(규칙 우선순위 맨 앞). 종목명 칸 값은 그대로(보유·관심 강조가 이름으로 찾음)
         blocks = [("B", "거래대금 상위", "거래대금상위", "tblRank[거래대금억]", NF["eok"], "거래대금"),
                   ("J", "외국인 순매수 상위", "외국인순매수", "tblRank[지표]", NF["eok_pl"], "순매수"),
@@ -1601,7 +1606,7 @@ class Builder:
         put(ws, "N49", "※ 금리 행의 등락률은 금리 자체의 변화율, 전일대비는 %p", size=8, color=C["muted"])
 
         ws.Rows(59).RowHeight = 8
-        # 주도주 순위 6블록 (2열 × 3행, 블록당 12열) — 시장 전체 개별종목(ETF·ETN·SPAC 제외, spec R19).
+        # 주도주 순위 6블록 (2열 × 3행, 블록당 12열) — 시장 전체 개별종목(ETF·ETN·SPAC 제외).
         # 열: # · 종목(이름 칸 + 넘침 칸) · 대회(★) · 섹터(4칸 폭, 설정 섹터 기준 이름이 길어도 보이게) · 현재가 · 등락률 · 지표 · 여백.
         # 3블록 × 8열로는 ★ 칸을 넣으면 종목명이나 섹터가 한 칸으로 줄어 잘리므로 2열 배치로 바꿨다.
         blocks = [
@@ -1646,7 +1651,7 @@ class Builder:
         put(ws, f"B{note_row}", "※ 시장 전체 개별종목(ETF·ETN·SPAC 제외) | ★ = 대회 종목 · 회색 = 대회 종목 아님 | 파란 굵은 글씨 = 보유·관심 종목 | "
                                 "외국인/기관 순매수는 장중 가집계(09:30·11:20·13:20·14:30 입력) 기준", size=8, color=C["muted"])
 
-        # 증시 자금 동향 (spec R13) — tblMktFunds: 일자 오름차순 약 100영업일, 금액 억원(빈칸 가능·0 없음), 공표 1~2일 늦음.
+        # 증시 자금 동향 — tblMktFunds: 일자 오름차순 약 100영업일, 금액 억원(빈칸 가능·0 없음), 공표 1~2일 늦음.
         # 항목마다 비어 있지 않은 값만으로 최신값과 1·5·20개 전 값의 차(1D·1W·1M)를 구함. 잔고는 조원, 증감은 억원.
         top = MKT_FUNDS_TOP
         ws.Rows(top - 1).RowHeight = 8
@@ -1794,7 +1799,7 @@ class Builder:
         put(ws, "B40", "읽는 법: 위험기여비중 합계 = 100%. 비중보다 위험기여비중이 크게 높은 종목이 샤프지수를 깎는 주범입니다. "
                        "변동성을 낮추려면 위험기여 상위 종목 비중을 줄이거나 상관이 낮은 종목으로 분산하세요.", size=9, color=C["muted"])
 
-        # 섹터 비중 (동적 배열) T12~
+        # 섹터 비중 (동적 배열) — T열 12행부터
         section(ws, "T11:AF11", "섹터 비중 (현금 포함)")
         put(ws, "T12", "섹터", bold=True, size=8, color=C["muted"])
         put(ws, "U12", "비중", bold=True, size=8, color=C["muted"])
@@ -2211,7 +2216,7 @@ class Builder:
         ov_col = "".join(ch for ch in OVERRIDE_TITLE_CELL if ch.isalpha())
         hyperlink(ws, f"B{n + 2}", f"'설정'!{OVERRIDE_TITLE_CELL}", f"› ⑤ 수정표(대회편입·분류 고치기)는 오른쪽 {ov_col}열에 있습니다")
         style(ws.Range(f"B{n + 2}"), color=C["accent"], size=9)
-        # ⑤ 수정표 (spec R4) — 표는 build_inputs가 OVERRIDE_ANCHOR에 만듦. 무시되는 행이 있으면 제목 줄 오른쪽에 경고
+        # ⑤ 수정표 — 표는 build_inputs가 OVERRIDE_ANCHOR에 만듦. 무시되는 행이 있으면 제목 줄 오른쪽에 경고
         t = ws.Range(OVERRIDE_TITLE_CELL)
         put(ws, t.Address, "⑤ 수정표 (대회편입·분류 — 항상 우선)", bold=True, size=11, color=C["navy"])
         put(ws, OVERRIDE_WARN_CELL, formula=F_OVERRIDE_WARN, bold=True, size=10, color=C["up"])
@@ -2325,7 +2330,7 @@ class Builder:
     # -------------------------------------------------------------------------------------------------------
     # -------------------------------------------------------------------------------------------------------
     def build_pages(self):
-        """새 페이지(spec R14~R18): 표를 적재·새로 고친 뒤 각 모듈의 build(builder). 종목분석은 tblContest(정적 표)가 있어야
+        """새 페이지(업종·대회종목·종목분석·뉴스·이벤트): 표를 적재·새로 고친 뒤 각 모듈의 build(builder). 종목분석은 tblContest(정적 표)가 있어야
         대회 종목 드롭다운 이름(대회코드목록)을 만든다 — build_static_tables가 먼저 만든다."""
         for mod in PAGE_MODULES:
             mod.build(self)
@@ -2386,7 +2391,7 @@ class Builder:
         return sum(1 for row in vals if any(not migrate.is_blank(row[j]) for j in idx))
 
     def report_counts(self):
-        """이관 행 수 대조(spec R22): 원본(파일에서 읽은 행) → 새 통합문서(지금 표에 있는 행). 입력표가 다르면 빌드 실패."""
+        """이관 행 수 대조: 원본(파일에서 읽은 행) → 새 통합문서(지금 표에 있는 행). 입력표가 다르면 빌드 실패."""
         if self.plan is None and not any(c for _, c, _ in self.seeds.values()):
             self.say("이관 없음 — 새로 만든 통합문서" + (" (샘플 포함)" if self.sample else ""))
             return
@@ -2469,6 +2474,35 @@ def _cleanup_work(work: str) -> None:
         pass
 
 
+def resume_refusal(a) -> str | None:
+    """숨은 개발용 옵션 --resume을 거절할 사유를 돌려준다(실행해도 되면 None).
+
+    --resume은 이관 없이 체크포인트 파일로 다시 만든 뒤 출력 파일을 바꾸므로(덮기 전 백업은 함), 체크포인트 이후에 출력 통합문서에
+    입력한 데이터(매매일지·설정·스냅샷 등)가 결과물에서 빠질 수 있다. 그래서 --out을 함께 주고 그 경로가 기본 통합문서
+    (excel_dashboard/KIS_PM_Dashboard.xlsm·.xlsx — 확장자와 관계없이 같은 이름이면 .xlsm으로 바뀌어 같은 파일이 됨)가 아닐 때만 허용한다.
+
+    Args:
+        a: argparse 결과(resume·out 속성; out은 주지 않았으면 None).
+
+    Returns:
+        거절 사유(한국어 한 문장) 또는 None.
+
+    Example:
+        resume_refusal(argparse.Namespace(resume="cp.xlsm", out=None))   # → 사유 문자열
+    """
+    if not getattr(a, "resume", None):
+        return None
+    hint = "--out으로 기본 통합문서가 아닌 스크래치 경로(예: --out D:/scratch/KIS_PM_Dashboard.xlsm)를 함께 주세요"
+    if getattr(a, "out", None) is None:
+        return f"--resume(개발용 체크포인트 재개)은 이관 없이 다시 만들어 출력 파일을 바꾸므로 기본 통합문서에는 쓰지 않습니다 — {hint}"
+    stem = os.path.normcase(os.path.splitext(os.path.realpath(os.path.abspath(a.out)))[0])
+    default_stem = os.path.normcase(os.path.splitext(os.path.realpath(DEFAULT_OUT))[0])
+    if stem == default_stem:
+        return (f"--resume(개발용 체크포인트 재개)은 기본 통합문서({DEFAULT_OUT} · .xlsx)를 출력으로 쓸 수 없습니다"
+                f"(체크포인트 이후 입력한 데이터가 빠질 수 있음) — {hint}")
+    return None
+
+
 def run_build(a) -> int:
     """명령줄 인수로 빌드 전체를 실행하고 종료 코드를 돌려준다: 0 성공 · 1 빌드 실패 · 2 토큰 갱신 필요 · 3 이관·설정 문제(시작 전 중단)."""
     log: list[str] = []
@@ -2478,7 +2512,11 @@ def run_build(a) -> int:
         log.append(msg)
 
     t0 = time.time()
-    out = os.path.abspath(a.out)
+    refusal = resume_refusal(a)
+    if refusal:
+        say(f"[중단] {refusal} (Excel을 띄우지 않고 멈춤)")
+        return 3
+    out = os.path.abspath(a.out if a.out is not None else DEFAULT_OUT)
     if not out.lower().endswith(".xlsm"):
         new_out = os.path.splitext(out)[0] + ".xlsm"
         say(f"⚠ 결과물은 매크로 포함 형식(.xlsm)이라 출력 확장자를 바꿉니다: {new_out}")
@@ -2499,7 +2537,7 @@ def run_build(a) -> int:
             pass
         return code
 
-    # 1) 이관 원본 (spec R22): --migrate-from > 출력 위치 .xlsm > 같은 위치 .xlsx. --no-migrate면 그 파일은 토큰 캐시에만 씀
+    # 1) 이관 원본: --migrate-from > 출력 위치 .xlsm > 같은 위치 .xlsx. --no-migrate면 그 파일은 토큰 캐시에만 씀
     try:
         if a.resume:
             source, token_src = None, None
@@ -2546,7 +2584,7 @@ def run_build(a) -> int:
             say(f"⚠ 이력 CSV를 읽지 못함({type(e).__name__}): {hcsv}")
         if est_snap is not None:
             say(f"  tblEstSnap: 이력 CSV에서 복원 {len(est_snap.rows)}행 ← {hcsv}")
-    # 4) 토큰 확인 (plan §0: 남은 시간이 기준 미만이면 Excel을 띄우지 않고 멈춤 — 갱신은 원본을 열어 T_Token으로)
+    # 4) 토큰 확인 (남은 시간이 기준 미만이면 Excel을 띄우지 않고 멈춤 — 갱신은 원본을 열어 T_Token으로)
     if token is not None:
         left = token.minutes_left()
         if left < TOKEN_MIN_MINUTES:
@@ -2616,7 +2654,7 @@ def run_build(a) -> int:
 
 def main():
     ap = argparse.ArgumentParser(description="KIS PM 일일 대시보드(.xlsm) 생성 — 기존 통합문서에서 자동 이관")
-    ap.add_argument("--out", default=DEFAULT_OUT, help="출력 .xlsm 경로 (기본 excel_dashboard/KIS_PM_Dashboard.xlsm)")
+    ap.add_argument("--out", default=None, help="출력 .xlsm 경로 (기본 excel_dashboard/KIS_PM_Dashboard.xlsm)")
     ap.add_argument("--cfg", default=None, help="kis_devlp.yaml 경로 (기본: 이관한 설정의 cfg_path, 없으면 ~/KIS/config/kis_devlp.yaml)")
     ap.add_argument("--empty", action="store_true", help="(이관 원본이 없을 때) 샘플 매매·관심종목 없이 생성")
     ap.add_argument("--visible", action="store_true")

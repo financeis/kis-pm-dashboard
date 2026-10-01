@@ -1,5 +1,5 @@
-// fnNicsCodes : NICS 대분류·업종 고정 코드표 (spec R2) — T_Class가 대분류·업종 이름을 찾을 때 사용 (2026-10-01, T2)
-//  - 원천: spec R2의 코드표(VALUESearch 스킬 카탈로그 industry.tsv의 NICS 부분)를 그대로 옮긴 것.
+// fnNicsCodes : NICS 대분류·업종 고정 코드표 — T_Class가 대분류·업종 이름을 찾을 때 사용 (2026-10-01)
+//  - 원천: 사용자가 정한 고정 코드표(VALUESearch 스킬 카탈로그 industry.tsv의 NICS 부분)를 그대로 옮긴 것.
 //  - excel_dashboard/data/nics_codes.csv(코드, 이름, 단계)와 **같은 내용**이어야 한다(내용을 바꾸면 둘 다 바꿈).
 //    실행 중에 CSV 경로를 읽지 않도록 M 안에 넣었다 — 통합문서를 다른 폴더로 옮기거나 저장소 없이 써도 분류가 동작한다.
 //  - 단계: "대분류"(N##000) / "업종"(N###00). 세부(N#####) 이름은 VALUESearch 파일의 이름을 쓰므로 이 표에 없다.

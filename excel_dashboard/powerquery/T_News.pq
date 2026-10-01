@@ -1,4 +1,4 @@
-// T_News : 보유·관심 종목 뉴스·공시 제목 — 시간순으로 합친 최근 100건 (spec R12, [모두 새로 고침]에서 갱신)
+// T_News : 보유·관심 종목 뉴스·공시 제목 — 시간순으로 합친 최근 100건 ([모두 새로 고침]에서 갱신)
 //  - 종합 시황/공시(제목) [국내주식-141] FHKST01011800 /uapi/domestic-stock/v1/quotations/news-title
 //    종목당 1회 호출 = 그 종목코드가 등록된 최근 40건(연속 조회 없음). FID_INPUT_ISCD만 지정하고 나머지 입력은 공백(현재 기준).
 //  - 응답 output[] → 열: data_dt(작성일자 YYYYMMDD) + data_tm(작성시간 HHMMSS) → 일시, hts_pbnt_titl_cntt → 제목,
@@ -12,6 +12,8 @@
 //    모든 종목이 실패하면 오류로 올려 직전 표를 유지(fnFallback). 보유·관심 종목이 없으면 열만 있는 빈 표.
 let
     Cols = {"일시", "종목코드", "종목명", "제목", "출처", "상태", "조회시각"},
+    Types = {{"일시", type datetime}, {"종목코드", type text}, {"종목명", type text}, {"제목", type text}, {"출처", type text},
+             {"상태", type text}, {"조회시각", type datetime}},
     Main =
         let
             Now = DateTime.LocalNow(),
@@ -76,8 +78,9 @@ let
             Out = Table.RemoveColumns(Table.Combine({Latest, ErrRows}), {"__srno"})
         in
             Out,
-    // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지
+    // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지. 직전 표를 다시 읽으면 열 형식이 없어(any)
+    // 일시·조회시각이 일련번호로 보이므로 같은 형식을 다시 지정한다
     Tried = try Table.Buffer(Main),
-    Final = if Tried[HasError] then fnFallback("tblNews", Cols, Tried[Error][Message]) else Tried[Value]
+    Final = if Tried[HasError] then Table.TransformColumnTypes(fnFallback("tblNews", Cols, Tried[Error][Message]), Types) else Tried[Value]
 in
     Final

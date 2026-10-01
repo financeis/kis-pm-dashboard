@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""통합 검증(T24, spec §8) 공용 도우미 — 토큰 관문, 자기 Excel 인스턴스 열기·닫기, COM 바쁨 재시도, 표 요약.
+"""통합 검증 공용 도우미 — 토큰 관문, 자기 Excel 인스턴스 열기·닫기, COM 바쁨 재시도, 표 요약.
 
 이 모듈은 `verify_*.py` 스크립트들이 함께 쓰는 작은 도구 모음입니다.
 
 - 토큰 관문(`token_gate`): 통합문서를 Excel로 열기 직전과 버튼 매크로를 실행하기 직전마다 토큰 원천 통합문서를
   **Excel로 열지 않고 파일을 직접 파싱해**(`kis_dev.remaining_minutes`) 남은 유효시간을 다시 확인합니다. 기준(기본 210분 =
-  3시간 30분) 미만이면 `TokenGateError`로 멈춥니다(갱신은 오케스트레이터만 — plan T24 '토큰 예외 규칙').
+  3시간 30분) 미만이면 `TokenGateError`로 멈춥니다(갱신은 한 사람이 한 번에 — docs/security.md의 '개발 중 토큰 규칙').
   출력은 남은 분만이며 토큰 값은 어디에도 쓰지 않습니다.
 - Excel: 항상 `DispatchEx`로 새 인스턴스를 띄우고(사용자가 연 Excel 창과 분리), 끝나면 자기 PID만 종료합니다.
   `Application.CalculateUntilAsyncQueriesDone`은 쓰지 않습니다(통합문서 표를 읽는 쿼리와 교착) — `QueryTable.Refreshing` 폴링만.
@@ -42,10 +42,10 @@ import pythoncom  # noqa: E402
 import pywintypes  # noqa: E402
 import win32com.client  # noqa: E402
 
-TOKEN_MIN_MINUTES = 210            # 3시간 30분 — T_Token 재발급 기준(3시간)보다 길게(plan §0)
+TOKEN_MIN_MINUTES = 210            # 3시간 30분 — T_Token 재발급 기준(3시간)보다 길게(docs/security.md의 '개발 중 토큰 규칙')
 RPC_BUSY = (-2147418111, -2147417846)   # RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER (Excel이 바빠 거절)
 STATUS_KINDS = (("OK", "OK"), ("오류", "오류:*"), ("이전", "이전 데이터*"), ("없음", "데이터 없음"), ("추정없음", "추정 없음"))
-# 버튼 전용 쿼리의 표(spec R20 — 모두 새로 고침에서 빠져야 함). tblA_*는 이름으로 판정
+# 버튼 전용 쿼리의 표(모두 새로 고침에서 빠져야 함). tblA_*는 이름으로 판정
 BUTTON_TABLES = ("tblClass", "tblSessions", "tblPxStore", "tblPxMetrics", "tblFlowU", "tblFin", "tblTarget", "tblEst",
                  "tblEstSnap", "tblCSL", "tblEvents", "tblSectorKRX", "tblCompany", "tblThemeAgg")
 NAMES = ("시세_최근조회", "시세_상태", "전체_최근조회", "전체_상태", "업종_최근조회", "업종_상태",

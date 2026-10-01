@@ -1,9 +1,9 @@
-// fnFwdEps : 날짜 asOf의 12개월 선행 EPS(Fwd EPS) — KIS 추정 FY1·FY2 EPS의 가중 평균 (spec R9, 2026-10-01 T9)
+// fnFwdEps : 날짜 asOf의 12개월 선행 EPS(Fwd EPS) — KIS 추정 FY1·FY2 EPS의 가중 평균 (2026-10-01)
 //  - 식: Fwd EPS = FY1 EPS × r/12 + FY2 EPS × (12 − r)/12,
 //        r = asOf가 속한 달부터 FY1 결산월까지의 달 수(양 끝 포함) = (FY1 연 × 12 + FY1 월) − (asOf 연 × 12 + asOf 월) + 1.
 //    예) 12월 결산·10월 → r = 3(10·11·12월), 3월 결산 FY1 2027.03E·2026년 10월 → r = 6, 결산월과 같은 달 → r = 1,
 //        결산 다음 달부터 시작하는 회계연도의 첫 달(12월 결산이면 1월) → r = 12(= FY1 EPS 그대로).
-//  - FY2 EPS가 없으면(null) FY1 EPS를 그대로 돌려준다(spec 'FY2가 없으면 FY1 EPS만 쓰고 표시' — 표시는 쓰는 쪽이
+//  - FY2 EPS가 없으면(null) FY1 EPS를 그대로 돌려준다(FY2가 없으면 FY1 EPS만 쓰고 그렇다고 표시 — 표시는 쓰는 쪽이
 //    tblEst의 FY2 빈칸으로 판단한다).
 //  - null을 돌려주는 경우(계산할 수 없음):
 //      FY1 라벨을 해석할 수 없음 · FY1 EPS 없음 · asOf 없음 ·

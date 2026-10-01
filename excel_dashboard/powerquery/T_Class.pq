@@ -1,4 +1,4 @@
-// T_Class : 업종 분류표 — VALUESearch 내보내기 파일의 NICS 3단계·KSIC 세분류·주요상품·기업집단 (spec R2, 2026-10-01 T2) → tblClass
+// T_Class : 업종 분류표 — VALUESearch 내보내기 파일의 NICS 3단계·KSIC 세분류·주요상품·기업집단 (2026-10-01) → tblClass
 //  - 원천: 설정 vs_path가 가리키는 수집기업_valuesearch.xlsx (시트 Sheet2, 1행 머리글). 파일은 읽기만 한다.
 //  - KIS를 호출하지 않으므로 실행 모드(tblRunCtl mode)를 보지 않고 새로 고칠 때마다 파일을 읽는다
 //    → 빌드(build 모드)와 [전체] 모두에서 갱신된다. '모두 새로 고침'에서 빼는 일은 빌더(연결 속성) 몫.

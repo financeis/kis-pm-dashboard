@@ -1,4 +1,4 @@
-// T_Events : 기업 이벤트 캘린더 — 예탁원정보 6종을 한 표로 (spec R11, 2026-10-01 T11, [전체] 버튼에서만 갱신)
+// T_Events : 기업 이벤트 캘린더 — 예탁원정보 6종을 한 표로 (2026-10-01, [전체] 버튼에서만 갱신)
 //  - 대상 종목 = fnPageRows()(대회 종목 ∪ 보유·관심, 수정표 반영). 기간 = 오늘 − event_days_back(7) ~ 오늘 + event_days_ahead(60).
 //  - 실행 모드(tblRunCtl mode): full([전체])만 KIS를 호출한다. 그 밖(quick·sector·analysis·build·빈칸·알 수 없는 값)은 호출 없이
 //    자기 표(tblEvents) → 없거나 비었으면 정적 tblEventsSeed → 없으면 열만 있는 빈 표를 돌려준다(D-day만 오늘 기준으로 다시 계산).

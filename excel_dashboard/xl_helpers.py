@@ -102,9 +102,9 @@ NF = {
     "text": "@",
 }
 
-# Q.Pack 3색 (spec §3): 낮음 초록 → 중앙값 노랑 → 높음 빨강
+# Q.Pack 3색: 낮음 초록 → 중앙값 노랑 → 높음 빨강
 QPACK_LOW, QPACK_MID, QPACK_HIGH = "#63BE7B", "#FFEB84", "#F8696B"
-QPACK_POINTS = ("min", "median", "max")   # 열별 색의 기준점 (spec R16)
+QPACK_POINTS = ("min", "median", "max")   # 열별 색의 기준점(최소·중앙값·최대 — docs/business-rules.md의 '색 비교 기준')
 QPACK_STRIP_PCTS = (5, 50, 95)            # 최근 20일 줄무늬 블록의 기준 백분위 (조정 가능)
 
 
@@ -1034,7 +1034,7 @@ def file_lock(path: str, owner: str = "build", *, timeout: float = 900.0, stale_
     끝나면 자기가 쓴 잠금 파일만 지운다.
 
     Example:
-        with file_lock(r"...\\locks\\vbom.lock", "T23", log=say):
+        with file_lock(r"...\\locks\\vbom.lock", "build_dashboard", log=say):
             ...
     """
     token = f"{owner} pid={os.getpid()} {dt.datetime.now():%Y-%m-%d %H:%M:%S}"

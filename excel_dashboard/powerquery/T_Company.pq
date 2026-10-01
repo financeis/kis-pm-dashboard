@@ -1,5 +1,5 @@
 // T_Company : 대회종목 페이지 표 — 페이지 행마다 분류·가격·수급·밸류·KIS 추정·목표주가·실적·신용/공매도/대차·이벤트를 한 행에 결합
-//   (spec R16 데이터·R5~R11, 2026-10-01 T16) → tblCompany   [KIS 호출 없음 — 어느 모드에서나 통합문서에 있는 표로 계산]
+//   (2026-10-01) → tblCompany   [KIS 호출 없음 — 어느 모드에서나 통합문서에 있는 표로 계산]
 //  - 행 = fnPageRows()(대회 종목 ± 수정표 ∪ 보유·관심). 정렬: 유니버스 = 대회 행을 시가총액억 내림차순(빈칸은 뒤) → 그 아래
 //    유니버스 밖 행을 시가총액억 내림차순(빈칸은 뒤). 같은 시가총액은 fnPageRows 순서(명단 순서).
 //  - 실행: [시세](quick)·[전체](full)의 T_PxMetrics 다음(전체는 T_CSL 다음), 그리고 빌드·수동 새로 고침(build)에서도 같은 계산.
@@ -11,16 +11,18 @@
 //      tblClass(KSIC 세분류·주요상품·기업집단), tblPxMetrics(가격 지표), tblFlowU, tblFin, tblTarget, tblEst, tblEstSnap, tblCSL,
 //      tblEvents, tblUniverse(종목명·시장·유의사항·KRX업종), tblContest(종목명·시장 대체), 세션 달력 fnPxCalendar(tblSessions;
 //      비면 T_PxMetrics처럼 tblPxStore → tblPxStoreSeed의 날짜), tblSettings(fin_lag_q 45·fin_lag_y 90 — 4분기 판정용).
-//  - '오늘' = fnPxRunCtl()[Today] (평소 실제 날짜, 시험용 now_override가 있으면 그 날짜). 현재 TTM EPS·BPS·Fwd EPS·다음 이벤트에 쓴다.
-//    조회시각 = 실제 계산 시각.
+//  - '오늘' = fnPxRunCtl()[Today] (평소 실제 날짜, 시험용 now_override가 있으면 그 날짜). 밸류 변화의 '오늘 알려진' TTM EPS·BPS,
+//    Fwd EPS·다음 이벤트에 쓴다(후행PER·PBR은 오늘과 무관 — 아래). 조회시각 = 실제 계산 시각.
 //  - 열 (금액 억원·원, 비율은 소수 — 페이지가 % 서식, 없으면 빈칸이고 0을 쓰지 않음):
 //      기본       종목코드, 종목명·시장(tblUniverse → 없으면 tblContest, 칸마다), 구분·유니버스(fnPageRows), NICS 업종·대테마(fnClassify)
 //      규모/가격  시가총액억, 거래대금60일억, 거래량60일천주, 현재가, 고52주대비, 가격기준일, 1D…1Y, D-19…D0 — tblPxMetrics 값 그대로
 //      수급       외국인·기관 1D·1W·1M % = 순매수 억원 ÷ 시가총액억(소수; 시가총액이 없거나 ≤ 0이면 빈칸), 억원 열은 tblFlowU 그대로,
 //                 수급기준일 = tblFlowU 기준일(장중에는 직전 완료 세션)
-//      후행PER    현재가 ÷ TTM EPS(오늘). TTM EPS(d) = 공개기준일 ≤ d인 분기 중 가장 최근 분기와 그 앞 3개 분기(결산년월이 정확히
-//                 3개월씩 이어짐, 모두 공개기준일 ≤ d이고 EPS가 있음)의 분기 단독 EPS 합 — 하나라도 없으면 빈칸. TTM ≤ 0이면 빈칸.
-//      PBR        현재가 ÷ BPS(오늘). BPS(d) = 공개기준일 ≤ d인 가장 최근 분기의 BPS(그 칸이 비면 빈칸). ≤ 0이면 빈칸.
+//      후행PER    현재가 ÷ 최근 TTM EPS. 최근 TTM EPS = 그 종목 tblFin의 최근 분기(결산년월이 있는 가장 최근 행)와 그 앞 3개 분기
+//                 (결산년월이 정확히 3개월씩 이어짐)의 분기 단독 EPS 합 — 공개기준일과 무관(받은 자료는 이미 공시된 실적이므로 공시 지연을
+//                 적용하지 않음). 넷 중 하나라도 행이 없거나 EPS가 비면 빈칸, 합 ≤ 0이면 빈칸.
+//      PBR        현재가 ÷ 최근 분기의 BPS(공개기준일과 무관, 그 칸이 비면 빈칸). ≤ 0이면 빈칸.
+//                 공시 지연(공개기준일)은 아래 '밸류 변화'의 분자·분모에만 쓴다.
 //      FwdEPS     fnFwdEps(FY1, FY1_EPS, FY2_EPS, 오늘) — 가중 평균(FY2가 없으면 FY1 EPS). FwdPER = 현재가 ÷ FwdEPS(≤ 0이면 빈칸).
 //                 tblEst 상태와 관계없이 표에 있는 값으로 계산한다('오류:'·'이전 데이터' 행은 직전 값 — 마지막으로 받은 추정).
 //      FwdPER변화1W·1M  현재 FwdPER ÷ 기준 세션의 FwdPER − 1. 기준 세션 B = 가격기준일에서 5·21세션 전(세션 달력).
@@ -28,7 +30,7 @@
 //                 ② 없고 tblEst 추정일 < B(같은 날은 아님)이면 재구성: 기준 세션 종가 ÷ fnFwdEps(FY1, FY1_EPS, FY2_EPS, B).
 //                    기준 세션 종가 = 현재가 ÷ (1 + 1W 또는 1M) — tblPxMetrics 등락률의 기준 세션과 같은 봉(정확히 복원됨).
 //                 ③ 그 밖은 빈칸. 어느 쪽 FwdPER이든 빈칸·≤ 0이면 빈칸.
-//      추정일·FY1·FY1_EPS·FY2_EPS  tblEst 그대로. FY2 = tblEst FY2, 단 FY1 EPS는 있는데 FY2 EPS가 없으면 글자 "FY1만"(spec R9 '표시';
+//      추정일·FY1·FY1_EPS·FY2_EPS  tblEst 그대로. FY2 = tblEst FY2, 단 FY1 EPS는 있는데 FY2 EPS가 없으면 글자 "FY1만"(FY1 EPS만 썼다는 표시;
 //                 이때 FwdEPS = FY1 EPS, FY2_EPS 빈칸).
 //      목표주가   목표가평균·증권사수·최근의견일·최근증권사·최근의견 = tblTarget 그대로(증권사수 ≤ 0은 빈칸),
 //                 괴리율 = 목표가평균 ÷ 현재가 − 1, 목표가변화1M·3M = 목표가평균 ÷ 목표가평균_1M전·_3M전 − 1(분모 ≤ 0·빈칸이면 빈칸)
@@ -41,10 +43,13 @@
 //                 매출·영업이익·순이익 YoY = 최근 분기 단독값 ÷ 전년 동분기(결산년월 − 100) − 1. 둘 중 하나라도 없거나 전년 ≤ 0이면 빈칸.
 //                 실적상태(영업이익): 흑자전환(전년 ≤ 0, 올해 > 0) / 적자전환(전년 > 0, 올해 ≤ 0) / 적자지속 / 흑자지속, 없으면 빈칸.
 //                 ROE = 최근 분기 행의 ROE(T_Fin이 소수로 바꾼 API 값 그대로).
-//      밸류 변화  PER변화k = (현재가 ÷ TTM EPS(오늘)) ÷ (기준 세션 종가 ÷ TTM EPS(기준일)) − 1, PBR변화k도 BPS로 같은 방식.
+//      밸류 변화  PER변화k = (현재가 ÷ TTM EPS(오늘)) ÷ (기준 세션 종가 ÷ TTM EPS(기준일)) − 1, PBR변화k도 BPS(d)로 같은 방식.
+//                 TTM EPS(d) = 날 d에 '알려진'(공개기준일 ≤ d) 분기 중 가장 최근 분기와 그 앞 3개 분기(결산년월이 정확히 3개월씩
+//                 이어지고 모두 공개기준일 ≤ d, EPS가 있음)의 분기 단독 EPS 합 — 하나라도 없으면 빈칸. BPS(d) = 공개기준일 ≤ d인 가장
+//                 최근 분기의 BPS. 분자(오늘)·분모(기준일) 모두 이 공시 지연 규칙(T_Fin이 1~3분기 + 45일·4분기 + 90일로 정함)을 쓰므로
+//                 최근 분기가 아직 공개기준일 전이면 분자의 EPS·BPS는 후행PER·PBR의 값과 다르다(같은 기준끼리 비교).
 //                 k = 3M·6M·1Y(가격기준일에서 63·126·250세션 전) / YTD(가격기준일 연도의 직전 연도 마지막 세션) — tblPxMetrics와 같은
-//                 기준 세션, 기준 세션 종가 = 현재가 ÷ (1 + 그 기간 등락률). '그날 알려진' = 공개기준일 ≤ 그날(공시 지연 규칙,
-//                 T_Fin이 1~3분기 + 45일·4분기 + 90일로 정함). 어느 쪽 EPS·BPS라도 빈칸·≤ 0이면 빈칸.
+//                 기준 세션, 기준 세션 종가 = 현재가 ÷ (1 + 그 기간 등락률). 어느 쪽 EPS·BPS라도 빈칸·≤ 0이면 빈칸.
 //      신용 등    신용잔고율·신용잔고율1M변화·공매도비중5일·대차잔고1M변화율 = tblCSL 그대로, 신용기준일 = tblCSL 기준일
 //      이벤트     다음이벤트 = tblEvents에서 그 종목의 일자 ≥ 오늘인 가장 가까운 일자 → "D-n 종류"(n = 일자 − 오늘, 오늘이면 D-0,
 //                 같은 날 여러 종류는 표 순서대로 "·"로 묶음 — T_Quote 시세판과 같은 글자). 다음이벤트일 = 그 일자(페이지가 그날 기준
@@ -283,17 +288,21 @@ let
             // 날짜 d에 알려진 분기(공개기준일 ≤ d) — fin이 결산년월 내림차순이므로 결과도 내림차순(첫 행 = 가장 최근 분기).
             // 여러 번 읽으므로 버퍼(목록 식은 읽을 때마다 다시 계산됨)
             Known = (fin as list, d as date) as list => List.Buffer(List.Select(fin, each [pub] <> null and [pub] <= d)),
-            TtmEps = (fin as list, d as date) as nullable number =>
+            // 분기 행 목록(결산년월 내림차순)의 첫 행과 그 앞 3개 분기(결산년월이 정확히 3개월씩 이어짐)의 분기 단독 EPS 합.
+            // 넷 중 하나라도 행이 없거나 EPS가 비면 null
+            TtmOf = (rows as list) as nullable number =>
                 let
-                    k = Known(fin, d),
-                    byYm = Record.FromList(k, List.Transform(k, each [ym])),
-                    i0 = if List.IsEmpty(k) then null else MonthIdx(k{0}[ym]),
+                    byYm = Record.FromList(rows, List.Transform(rows, each [ym])),
+                    i0 = if List.IsEmpty(rows) then null else MonthIdx(rows{0}[ym]),
                     four = if i0 = null then {} else List.Transform({0, 1, 2, 3}, (j) => Record.FieldOrDefault(byYm, YmOfIdx(i0 - 3 * j), null)),
                     ok = List.Count(four) = 4 and List.AllTrue(List.Transform(four, each _ <> null and _[eps] <> null))
                 in
                     if ok then List.Sum(List.Transform(four, each [eps])) else null,
-            BpsAt = (fin as list, d as date) as nullable number =>
-                let k = Known(fin, d) in if List.IsEmpty(k) then null else k{0}[bps],
+            // 분기 행 목록의 첫 행(가장 최근 분기)의 BPS
+            BpsOf = (rows as list) as nullable number => if List.IsEmpty(rows) then null else rows{0}[bps],
+            // 밸류 변화용(공시 지연 규칙): 날짜 d에 알려진 분기만으로 계산
+            TtmEps = (fin as list, d as date) as nullable number => TtmOf(Known(fin, d)),
+            BpsAt = (fin as list, d as date) as nullable number => BpsOf(Known(fin, d)),
             QLabel = (fin as list) as nullable text =>
                 let
                     x = if List.IsEmpty(fin) then null else fin{0},
@@ -356,13 +365,17 @@ let
                     lat = if List.IsEmpty(fin) then null else fin{0},
                     prevYm = if lat = null then null else Text.From(Number.From(lat[ym]) - 100),
                     prv = if lat = null then null else List.First(List.Select(fin, each [ym] = prevYm), null),
-                    epsNow = TtmEps(fin, Today),
-                    bpsNow = BpsAt(fin, Today),
+                    // 후행PER·PBR: 받은 자료의 최근 분기 기준(공개기준일과 무관)
+                    epsLatest = TtmOf(fin),
+                    bpsLatest = BpsOf(fin),
+                    // 밸류 변화의 분자: 오늘 알려진 값(공시 지연 규칙 — 분모의 기준일 값과 같은 기준)
+                    epsKnown = TtmEps(fin, Today),
+                    bpsKnown = BpsAt(fin, Today),
                     ValChg = (kk as text, isPer as logical) as nullable number =>
                         let
                             bd = if kk = "YTD" then YtdDate else BaseDate(Record.Field(Back, kk)),
                             cb = BaseClose(kk),
-                            vNow = if isPer then epsNow else bpsNow,
+                            vNow = if isPer then epsKnown else bpsKnown,
                             vBase = if bd = null then null else if isPer then TtmEps(fin, bd) else BpsAt(fin, bd)
                         in
                             if bd = null or cb = null or price = null or vNow = null or vNow <= 0 or vBase = null or vBase <= 0 then null
@@ -409,7 +422,7 @@ let
                     & List.Transform(StripCols, (s) => Num(F(x, s)))
                     & {Pct("외국인1D억"), Pct("외국인1W억"), Pct("외국인1M억"), Fv("외국인1D억"), Fv("외국인1W억"), Fv("외국인1M억"),
                        Pct("기관1D억"), Pct("기관1W억"), Pct("기관1M억"), Fv("기관1D억"), Fv("기관1W억"), Fv("기관1M억"), Day(F(fl, "기준일")),
-                       Div(price, epsNow), Div(price, bpsNow),
+                       Div(price, epsLatest), Div(price, bpsLatest),
                        fper, FwdChg(5, "1W"), FwdChg(21, "1M"), fwd, estDay, fy1, e1,
                        if fy1Only then "FY1만" else fy2, if fy1Only then null else e2,
                        m0, Chg(m0, price), brokers, Chg(m0, Num(F(tg, "목표가평균_1M전"))), Chg(m0, Num(F(tg, "목표가평균_3M전"))),

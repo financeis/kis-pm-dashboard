@@ -1,4 +1,4 @@
-// T_A_Investor : 종목분석 1구역 — 가격·투자자 일별 최근 120 완료 세션 (spec R17-1) → tblA_Investor (2026-10-01 T15)
+// T_A_Investor : 종목분석 1구역 — 가격·투자자 일별 최근 120 완료 세션 → tblA_Investor (2026-10-01)
 //  - 원천: 종목별 투자자매매동향(일별) FHPTJ04160001 /uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily
 //    1회 = 입력일(FID_INPUT_DATE_1) 이하 최근 30세션(최신순). 가장 오래된 일자 − 1일로 입력일을 당겨 4회 → 120세션.
 //    30행 미만이 오면(상장 직후) 거기서 멈춤 — 상장 전 날짜는 종가가 빈 행으로 오므로(없는 코드 999999도 같은 모양, 실측) 종가가 빈 행은 버린다.

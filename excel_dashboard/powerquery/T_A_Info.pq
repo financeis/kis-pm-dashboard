@@ -1,11 +1,11 @@
-// T_A_Info : 종목분석 머리 정보 1행 (spec R17 상단) → tblA_Info (2026-10-01 T15)
+// T_A_Info : 종목분석 머리 정보 1행 → tblA_Info (2026-10-01)
 //  - 실행 규칙은 fnARun: KIS 호출은 [조회](tblRunCtl mode = analysis)에서만, 다른 모드는 직전 표 그대로, 분석코드가 틀리면 "오류: 종목코드 확인".
 //  - 원천(호출 2회):
 //      주식기본조회 CTPF1002R search-stock-info      → 종목명(prdt_abrv_name), 시장(mket_id_cd: STK→KOSPI, KSQ→KOSDAQ, KNX→KONEX)
 //      주식현재가 시세 FHKST01010100 inquire-price     → 현재가·전일대비·등락률(%→소수)·거래대금(원→억원)·시가총액(hts_avls, 억원)·PER·PBR
 //                                                       ·외국인소진율(%→소수)·52주 고저·유의(T_Quote와 같은 규칙)·KRX 업종명(bstp_kor_isnm)
 //  - 분류: fnClassify(종목코드, KRX업종) → 대회편입·대회비고·NICS 3단계·대테마·세부테마·분류출처 (수정표 규칙을 여기서 다시 구현하지 않음).
-//    KRX업종 = tblUniverse에 KRX업종 열이 있으면(T22 이후) 그 값, 없으면 inquire-price의 업종명. NICS가 없을 때의 대체에만 쓰인다.
+//    KRX업종 = tblUniverse에 KRX업종 열이 있으면 그 값, 없으면 inquire-price의 업종명. NICS가 없을 때의 대체에만 쓰인다.
 //    KSIC 세분류·주요상품·기업집단 = tblClass(종목코드가 빈 경고 행은 건너뜀).
 //  - 상태: OK / "오류: 종목코드 확인(KIS 시세 없음)" — 형식은 맞지만 상장 시세가 없는 코드. 시장(mket_id_cd)도 현재가도 비어 오면 이 상태
 //    (999999 실측: 주식기본조회는 비상장 법인 이름을 주지만 시장은 빈칸, 시세는 모두 0). 이때 시세 열은 모두 빈칸.
@@ -39,7 +39,7 @@ let
             Market = if MarketCode = "STK" then "KOSPI" else if MarketCode = "KSQ" then "KOSDAQ" else if MarketCode = "KNX" then "KONEX" else MarketCode,
             Price = Pos("stck_prpr"),
 
-            // KRX 업종: tblUniverse의 KRX업종 열(T22 이후) → 없으면 현재가 시세의 업종명
+            // KRX 업종: tblUniverse의 KRX업종 열 → 없으면 현재가 시세의 업종명
             Univ = try Excel.CurrentWorkbook(){[Name = "tblUniverse"]}[Content] otherwise null,
             UnivKrx =
                 if Univ = null or not List.ContainsAll(Table.ColumnNames(Univ), {"종목코드", "KRX업종"}) then null

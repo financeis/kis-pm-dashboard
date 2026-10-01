@@ -1,4 +1,4 @@
-// fnTargetOpinions : 한 종목의 종목투자의견 원천 행 (spec R8, 2026-10-01 T8)
+// fnTargetOpinions : 한 종목의 종목투자의견 원천 행 (2026-10-01)
 //  - API: 국내주식 종목투자의견[국내주식-188] FHKST663300C0 /uapi/domestic-stock/v1/quotations/invest-opinion
 //    입력 FID_COND_MRKT_DIV_CODE = J, FID_COND_SCR_DIV_CODE = 16633, FID_INPUT_DATE_1 = 시작(이후), FID_INPUT_DATE_2 = 끝(이전),
 //    날짜는 YYYYMMDD, 기간은 양 끝 포함.

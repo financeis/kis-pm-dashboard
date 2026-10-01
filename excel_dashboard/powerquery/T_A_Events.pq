@@ -1,7 +1,7 @@
-// T_A_Events : 종목분석 10구역 — 이 종목의 기업 이벤트, 오늘 − 7일 ~ 오늘 + 60일 (spec R17-10, R11) → tblA_Events (2026-10-01 T15)
-//  - 기간: 설정 event_days_back(기본 7)·event_days_ahead(기본 60). 종류·일자·상세는 [전체]의 T_Events(→ tblEvents, T11)와 같은 규칙을
-//    한 종목에 적용한다(두 페이지가 같은 종목에 같은 이벤트를 보이도록 — T11의 2026-10-01 실측 해석을 그대로 따름).
-//  - 원천 = 예탁원정보 6종, 각 1회(호출 6회). 종목을 지정한 조회(SHT_CD)는 연속 조회 없이 한 쪽(실측, T11)이다.
+// T_A_Events : 종목분석 10구역 — 이 종목의 기업 이벤트, 오늘 − 7일 ~ 오늘 + 60일 → tblA_Events (2026-10-01)
+//  - 기간: 설정 event_days_back(기본 7)·event_days_ahead(기본 60). 종류·일자·상세는 [전체]의 T_Events(→ tblEvents)와 같은 규칙을
+//    한 종목에 적용한다(두 페이지가 같은 종목에 같은 이벤트를 보이도록 — T_Events의 2026-10-01 실측 해석을 그대로 따름).
+//  - 원천 = 예탁원정보 6종, 각 1회(호출 6회). 종목을 지정한 조회(SHT_CD)는 연속 조회 없이 한 쪽(2026-10-01 실측)이다.
 //      종류                일자                                                    API (tr_id) · 조회 기간이 걸리는 필드
 //      CB·BW 전환 상장     상장일 list_dt                                          상장정보일정 list-info (HHKDB669107C0) · list_dt. 사유 issue_type에 CB·BW·'전환'
 //      신규상장            상장일 list_dt                                          상장정보일정 · 사유 '통일교체'(신규상장 표지). 같은 날 '유상증자' 행 = 공모(상세에 넣고 따로 안 냄)
@@ -17,7 +17,7 @@
 //                                                                                   최대 약 90일 뒤라 기준일은 시작 − 100일부터 받아 총회일로 거름. 안건 행은 (총회일, 구분)마다 1건
 //    상장정보일정에서 버리는 사유: STOCKOPTION행사, 액면분할·액면병합, 상호변경, 자본감소, '-', 배당(주식배당 상장) 등 7종에 없는 것.
 //    빈 자리 행(종목코드 빈칸 — 해당 없을 때 100행이 빈칸으로 옴)은 버린다.
-//  - 상세: T11과 같은 형식(" · "로 이음, 수량 #,##0, 날짜 M/d, 150자에서 자름).
+//  - 상세: T_Events와 같은 형식(" · "로 이음, 수량 #,##0, 날짜 M/d, 150자에서 자름).
 //  - D-day = 일자 − 오늘(일, 앞으로 남은 날이 양수 — 페이지에서 "D-"0 형식; 지난 이벤트는 음수).
 //  - 같은 일자·종류·상세는 1건. 정렬: 일자 → 종류 → 상세 오름차순. 이벤트가 없으면 "데이터 없음" 1행.
 //  - 실패: 6종이 모두 실패하면 오류 → 직전 표 유지(fnARun). 일부만 실패하면 받은 이벤트 뒤에 실패한 원천마다 1행
@@ -35,7 +35,7 @@ let
             K = "/uapi/domestic-stock/v1/ksdinfo/",
             F = (d as date) as text => fnYmdText(d),
 
-            // ---- 도우미 (T11 T_Events와 같은 표기)
+            // ---- 도우미 (T_Events와 같은 표기)
             Txt = (r as record, k as text) as text =>
                 let v = Record.FieldOrDefault(r, k, null) in if v = null then "" else try Text.Trim(Text.From(v)) otherwise "",
             Blank = (t as nullable text) as nullable text => if t = null or Text.Trim(t) = "" then null else Text.Trim(t),

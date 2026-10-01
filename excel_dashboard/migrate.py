@@ -1,4 +1,4 @@
-"""기존 대시보드 통합문서에서 사용자 데이터·이력·토큰 캐시를 읽어 '이관 계획'을 만든다 (spec R22, 2026-10-01 T23).
+"""기존 대시보드 통합문서에서 사용자 데이터·이력·토큰 캐시를 읽어 '이관 계획'을 만든다 (2026-10-01, 규칙은 docs/business-rules.md의 '사용자 데이터 보존').
 
 - 원본은 **Excel로 열지 않는다**: 열면 '파일 열 때 새로 고침'이 걸린 T_Token이 돌아 토큰이 새로 발급될 수 있다(알림톡).
   xlsx_tables(표준 라이브러리 zip/XML)로 파일을 직접 읽는다. 이 모듈은 COM을 쓰지 않는다.
@@ -6,7 +6,7 @@
     입력표(tblTrades·tblWatch·tblMacro·tblHolidays·tblOverride)는 그 표에 직접, tblSettings는 키별 병합,
     자기참조 저장소 표(tblPxStore·tblSessions·tblEstSnap·tblCSL·tblFin, 있으면 tblFlowU·tblTarget·tblEst·tblEvents·tblSectorKRX)는
     정적 표 `<표이름>Seed`로 — Power Query가 채우는 표에는 행을 직접 쓸 수 없어서, 자기참조 쿼리가 자기 표가 비었을 때
-    Seed를 읽어 이어 쓰게 한다(plan §0). tblToken은 메모리로만 넘겨 새 통합문서의 토큰 표에 넣는다(불필요한 재발급 방지).
+    Seed를 읽어 이어 쓰게 한다. tblToken은 메모리로만 넘겨 새 통합문서의 토큰 표에 넣는다(불필요한 재발급 방지).
 - 토큰 값은 TokenRecord 안에만 있고 repr·로그·파일 어디에도 나오지 않는다(남은 분만 보고).
 - 파일 작업 도우미(원본 선택·잠금 확인·백업 복사·.xlsx 원본 옮기기)도 여기 둔다. 어떤 파일도 백업 없이 지우지 않는다.
 
@@ -34,7 +34,7 @@ class MigrationError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# 이관 대상 (표 이름·열은 spec §5 / plan §0 인터페이스 그대로)
+# 이관 대상 (표 이름·열은 docs/contracts.md의 표 계약 그대로)
 # ---------------------------------------------------------------------------------------------------------------
 # 입력표: 이관하는 열 = 사용자가 입력하는 열. 수식 열(빌더가 다시 넣음)은 FORMULA_COLUMNS — 원본 값(계산 결과)은 버린다.
 # 입력 열에 사용자가 수식을 넣었으면 파일에 저장된 계산 값으로 옮긴다(파일 파싱은 수식을 다시 계산하지 않음).
@@ -195,7 +195,7 @@ def backup_dir_for(out_path: str) -> str:
 
 
 def candidate_sources(out_path: str) -> list[str]:
-    """--migrate-from이 없을 때의 이관 원본 후보 (spec R22): 출력 위치의 .xlsm, 그다음 같은 위치·같은 이름의 .xlsx."""
+    """--migrate-from이 없을 때의 이관 원본 후보: 출력 위치의 .xlsm, 그다음 같은 위치·같은 이름의 .xlsx."""
     stem = os.path.splitext(os.path.abspath(out_path))[0]
     return [stem + ".xlsm", stem + ".xlsx"]
 
@@ -264,7 +264,7 @@ def backup_copy(path: str, backup_dir: str, stamp: str) -> str:
 
 
 def move_into_backup(path: str, backup_path: str, backup_dir: str, stamp: str) -> str:
-    """이관이 끝난 .xlsx 원본을 백업 폴더로 '옮긴다'(spec R22). 빌드 전에 만든 백업 복사본과 내용이 같으면 그 복사본이 곧
+    """이관이 끝난 .xlsx 원본을 백업 폴더로 '옮긴다'. 빌드 전에 만든 백업 복사본과 내용이 같으면 그 복사본이 곧
     옮긴 파일이므로 원래 자리의 파일만 지운다. 빌드 중에 원본이 바뀌었으면(해시 다름) 새 이름으로 백업 폴더에 옮긴다.
     어느 경우든 백업 폴더에 같은 내용이 있는 것을 확인한 뒤에만 원래 자리에서 없앤다. 돌려주는 값 = 로그 한 줄."""
     if not os.path.isfile(path):

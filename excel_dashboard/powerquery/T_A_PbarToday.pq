@@ -1,4 +1,4 @@
-// T_A_PbarToday : 종목분석 3구역 (a) — KIS 당일 매물대(가격대별 거래량·비중) (spec R17-3a) → tblA_PbarToday (2026-10-01 T15)
+// T_A_PbarToday : 종목분석 3구역 (a) — KIS 당일 매물대(가격대별 거래량·비중) → tblA_PbarToday (2026-10-01)
 //  - 원천: 국내주식 매물대/거래비중 FHPST01130000 /uapi/domestic-stock/v1/quotations/pbar-tratio (당일 자료만, 1회 호출)
 //    + 기준일(당일 표시)은 fnAQuote(최근 일봉 일자, 호출 1회).
 //  - 응답 output2 = 당일 체결된 가격대, 거래량 순위 순으로 최대 100개(2026-10-01 실측: 005930 31개·247540 83개는 거래량 합 =
