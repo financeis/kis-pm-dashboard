@@ -3,13 +3,15 @@
 //      국내주식 손익계산서 FHKST66430200 /uapi/domestic-stock/v1/finance/income-statement (FID_DIV_CLS_CODE 1 = 분기)
 //        → 최근 약 30분기, stac_yymm(결산년월) 내림차순. 값은 회계연도 누적(2026-10-01 실측: 005930 202603 133.9조, 202606 305.4조),
 //          단위 억원(2023 연간 매출 2,589,355억 = KIS 추정 API·공시와 일치). 매출 sale_account, 영업이익 bsop_prti, 순이익 thtr_ntin(당기순이익).
-//          99.99는 KIS의 '값 없음' 표시(감가상각비 등 미제공 칸에 일괄로 옴) → 빈칸.
+//          빈 값 표시 ""·99.99(미제공 칸)·0.00(자료 없는 분기 — 모든 항목이 0.00)은 모두 빈칸(T_Fin과 같은 규칙 — 정확히 0억인 진짜 값도 빈칸).
 //      주식현재가 시세 FHKST01010100 → stac_month(결산월; 없으면 12) — 회계연도의 첫 분기를 정하려고.
 //  - 분기 단독값: 회계연도 첫 분기(결산월 + 3개월, 12월 결산이면 3월)는 누적 그대로, 그 밖은 누적 − 직전 분기(3개월 전) 누적.
 //    직전 분기 행이 없으면 빈칸.
 //  - YoY = 분기 단독값 ÷ 전년 동분기(12개월 전) 단독값 − 1 — 전년 값이 0 이하이거나 빈칸이면 빈칸(spec R7). 영업이익률 = 영업이익 ÷ 매출(매출 > 0).
-//  - 열: 결산년월 "2026.06", 분기 "2026.Q2"(분기 말 달력 기준), 정렬 결산년월 오름차순(마지막 행 = 최근 분기), 최근 8개.
-//    분기 행이 없으면 "데이터 없음" 1행.
+//  - 열: 결산년월 "2026.06", 분기 "2026.Q2"(분기 말 달력 기준), 정렬 결산년월 오름차순(마지막 행 = 최근 분기).
+//    행 = 값이 하나라도 있는 가장 최근 분기까지의 응답 분기 중 최근 8개(중간에 값이 전부 빈 분기도 행으로 남김 — T_Fin과 같음).
+//    값이 있는 분기가 없으면(우선주·KIS 재무 자료 없는 종목·없는 코드) "데이터 없음" 1행.
+//  - T_Fin(→ tblFin)은 결산월을 누적값이 줄어드는 곳으로 추정하지만, 여기서는 한 종목이라 현재가 시세의 결산월(stac_month)을 바로 쓴다.
 let
     Types = {{"종목코드", type text}, {"결산년월", type text}, {"분기", type text}, {"매출억", type number}, {"영업이익억", type number},
              {"순이익억", type number}, {"영업이익률", type number}, {"매출YoY", type number}, {"영업이익YoY", type number},
@@ -27,7 +29,8 @@ let
             FyeIn = try Number.From(Text.Trim(Text.From(Record.FieldOrDefault(P, "stac_month", "")))) otherwise null,
             Fye = if FyeIn = null or FyeIn < 1 or FyeIn > 12 then 12 else FyeIn,
             FirstMonth = Number.Mod(Fye + 2, 12) + 1,
-            Val = (r as record, k as text) as nullable number => let v = fnNum(Record.FieldOrDefault(r, k, null)) in if v = 99.99 then null else v,
+            Val = (r as record, k as text) as nullable number =>
+                let v = fnNum(Record.FieldOrDefault(r, k, null)) in if v = null or v = 99.99 or v = 0 then null else v,
             // 누적 행: ym = 년*100+월
             Cum = List.Buffer(List.RemoveNulls(List.Transform(L, (r) =>
                 let
@@ -55,7 +58,11 @@ let
                     else [ym = ym, 매출 = Sub(cur[매출], prev[매출]), 영업 = Sub(cur[영업], prev[영업]), 순익 = Sub(cur[순익], prev[순익])],
             YoY = (cur as nullable number, base as nullable number) as nullable number =>
                 if cur = null or base = null or base <= 0 then null else cur / base - 1,
-            Yms = List.LastN(List.Sort(List.Distinct(List.Transform(Cum, each [ym]))), Keep),
+            // 값이 하나라도 있는 가장 최근 분기까지의 최근 8개 분기
+            WithData = List.Transform(List.Select(Cum, each [매출] <> null or [영업] <> null or [순익] <> null), each [ym]),
+            Anchor = if List.IsEmpty(WithData) then null else List.Max(WithData),
+            Yms = if Anchor = null then {}
+                  else List.LastN(List.Sort(List.Select(List.Distinct(List.Transform(Cum, each [ym])), each _ <= Anchor)), Keep),
             Rows = List.Transform(Yms, (ym) =>
                 let
                     d = Discrete(ym),

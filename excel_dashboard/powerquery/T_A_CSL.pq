@@ -2,7 +2,8 @@
 //  - 원천(호출 4회, 2026-10-01 005930 실측으로 필드·단위 확인):
 //      공매도 일별추이 FHPST04830000 daily-short-sale  기간 1회(오늘−110일 ~ 어제, 100건 이내) — output2
 //          공매도수량 ssts_cntg_qty(주), 공매도거래대금억 ssts_tr_pbmn(원 → 억원; 수량 × 평균가와 일치),
-//          공매도비중 ssts_tr_pbmn_rlim(거래대금 대비 % → 소수; 공매도 대금 ÷ 그날 거래대금과 일치), 종가 stck_clpr
+//          공매도비중 = ssts_tr_pbmn ÷ acml_tr_pbmn(그날 공매도 거래대금 ÷ 총 거래대금, 소수 — T_CSL과 같은 계산. 응답의 비율 필드
+//            ssts_tr_pbmn_rlim(%)은 이 몫을 소수 둘째 자리 %로 반올림한 값), 총 거래대금이 0·빈 값이면 빈칸, 종가 stck_clpr
 //      종목별 일별 대차거래추이 HHPST074500C0 daily-loan-trans  조회구분 3(종목), 기간 1회 — output1
 //          대차잔고주수 rmnd_stcn, 대차잔고금액억 rmnd_amt(백만원 → 억원; 잔고주수 × 종가와 일치), 대차증감주수 prdy_rmnd_vrss
 //      신용잔고 일별추이 FHPST04760000 daily-credit-balance  30건/회, 입력 = 결제일자(그 이하) → 가장 오래된 결제일 − 1일로 당겨 2회
@@ -76,11 +77,12 @@ let
                     px = List.First(List.RemoveNulls({Pos(N(s, "stck_clpr")), Pos(N(l, "stck_prpr")), Pos(N(c, "stck_prpr"))}), null),
                     rate = N(c, "whol_loan_rmnd_rate"),
                     sAmt = N(s, "ssts_tr_pbmn"),
-                    sPct = N(s, "ssts_tr_pbmn_rlim"),
+                    sTot = N(s, "acml_tr_pbmn"),
                     lAmt = N(l, "rmnd_amt")
                 in
                     {code, d, px, if rate = null then null else rate / 100, N(c, "whol_loan_rmnd_stcn"),
-                     N(s, "ssts_cntg_qty"), if sAmt = null then null else sAmt / 100000000, if sPct = null then null else sPct / 100,
+                     N(s, "ssts_cntg_qty"), if sAmt = null then null else sAmt / 100000000,
+                     if sAmt = null or sTot = null or sTot <= 0 then null else sAmt / sTot,
                      N(l, "rmnd_stcn"), if lAmt = null then null else lAmt / 100, N(l, "prdy_rmnd_vrss"), Status, now})
         in
             if List.Count(Failed) = List.Count(Sources) then error Error.Record("조회 실패", Reason(Failed{0}[r][Error]))
