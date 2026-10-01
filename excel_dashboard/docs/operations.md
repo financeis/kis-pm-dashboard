@@ -59,11 +59,11 @@ python excel_dashboard/build_dashboard.py --cfg <yaml> --visible # 설정 파일
 
 ## 다른 PC에서 쓰기
 
-- 통합문서는 git에 없으므로(토큰·매매기록) 직접 옮긴다: `KIS_PM_Dashboard.xlsm` + `history\`를 한 폴더에, `수집기업_valuesearch.xlsx`를 그 폴더나 바로 위 폴더에, `kis_devlp.yaml`을 그 PC의 `%USERPROFILE%\KIS\config\`에(USB 등 — 메일·클라우드 금지).
+- 통합문서는 git에 없으므로(토큰·매매기록) 직접 옮긴다: `KIS_PM_Dashboard.xlsm` + `history\`를 한 폴더에, `수집기업_valuesearch.xlsx`를 그 폴더나 바로 위 폴더에(저장소에 들어 있으므로 clone한 저장소의 `excel_dashboard\`에 통합문서를 두면 그대로 찾음), `kis_devlp.yaml`을 그 PC의 `%USERPROFILE%\KIS\config\`에(USB 등 — 메일·클라우드 금지).
 - 메일·다운로드로 받은 파일은 [속성] → [차단 해제] 체크(인터넷 표시가 붙은 `.xlsm`은 Office가 매크로를 막음).
 - 처음 열 때 [콘텐츠 사용]을 누르면 매크로(`Auto_Open` → `FixLocalPaths`)가 [설정] `cfg_path`·`vs_path`를 그 PC 위치로 바꾼다 — 지금 경로에 파일이 없고 표준 위치에 있을 때만. 모든 버튼도 시작할 때 같은 확인을 하고, 바꾸면 요약에 `[주의] 이 PC에 맞게 설정 경로를 바꿈: …`.
 - 두 PC에서 번갈아 쓰면 통합문서 하나만 원본으로(동시에 열지 않기). 사본을 따로 쓰면 매매일지·가격 이력이 갈린다. 동기화 폴더는 Google Drive·Dropbox처럼 일반 폴더 경로로 보이는 것을 쓴다 — OneDrive에서 연 통합문서는 `ThisWorkbook.Path`가 인터넷 주소로 나올 수 있어 이력 CSV 저장(`history\`)과 경로 맞추기가 실패할 수 있다(이 PC에서 시험하지 않은 알려진 Excel 동작).
-- 그 PC에서 다시 만들려면: `git clone https://github.com/financeis/kis-pm-dashboard.git` → `pip install pywin32 pyyaml requests` → 통합문서를 `excel_dashboard\`에, VALUESearch 파일을 저장소 루트에 → `python excel_dashboard/build_dashboard.py`. 이관 원본의 `cfg_path`·`vs_path`가 그 PC에 없으면 빌더가 기본 위치(`%USERPROFILE%\KIS\config\kis_devlp.yaml`, 저장소 루트)로 바꾸고 로그에 남긴다.
+- 그 PC에서 다시 만들려면: `git clone https://github.com/financeis/kis-pm-dashboard.git` → `pip install pywin32 pyyaml requests` → `kis_devlp.yaml`을 `%USERPROFILE%\KIS\config\`에, 통합문서(+ `history\`)를 `excel_dashboard\`에 → `python excel_dashboard/build_dashboard.py`(통합문서 없이 새로 만들려면 `--no-migrate --empty` — 매매일지·설정이 비고 첫 [전체]가 약 15분). VALUESearch 파일은 저장소에 들어 있다. 이관 원본의 `cfg_path`·`vs_path`가 그 PC에 없으면 빌더가 기본 위치(`%USERPROFILE%\KIS\config\kis_devlp.yaml`, 저장소 루트)로 바꾸고 로그에 남긴다.
 - git 원격: `origin` = 비공개 `financeis/kis-pm-dashboard`(여기로만 푸시), `upstream` = KIS 공식 저장소(받기만).
 
 ## 데이터 재생성

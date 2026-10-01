@@ -4,7 +4,7 @@
 노트북에서 만든 대시보드를 메인 컴퓨터에서도 써야 한다. 통합문서에는 접근토큰과 매매기록이 들어 있어 git에 올릴 수 없고, [설정]의 KIS 설정 파일 경로(`cfg_path`)와 VALUESearch 경로(`vs_path`)는 노트북의 절대 경로(사용자 폴더 이름 포함)로 저장돼 다른 PC에서는 맞지 않을 수 있다.
 
 ## 결정
-코드는 개인 비공개 GitHub 저장소(`financeis/kis-pm-dashboard`, 원격 `origin`)에 올리고, 통합문서·`history\`·VALUESearch 파일·`kis_devlp.yaml`은 사용자가 직접 옮긴다. 매크로 `FixLocalPaths`가 사용자가 통합문서를 열 때(`Auto_Open`)와 모든 버튼 시작에서, 지금 경로에 파일이 없고 표준 위치(`%USERPROFILE%\KIS\config\kis_devlp.yaml`, 통합문서 폴더·상위 폴더의 `수집기업_valuesearch.xlsx`)에 파일이 있을 때만 두 경로를 바꾼다. 다른 PC에서 다시 빌드할 때도 빌더가 같은 규칙으로 기본 위치를 쓴다.
+코드는 개인 비공개 GitHub 저장소(`financeis/kis-pm-dashboard`, 원격 `origin`)에 올리고, 통합문서·`history\`·`kis_devlp.yaml`은 사용자가 직접 옮긴다. VALUESearch 파일은 저장소가 비공개라서 사용자 결정으로 커밋했다(clone하면 함께 받음 — 저장소를 공개하면 다시 빼야 함). 매크로 `FixLocalPaths`가 사용자가 통합문서를 열 때(`Auto_Open`)와 모든 버튼 시작에서, 지금 경로에 파일이 없고 표준 위치(`%USERPROFILE%\KIS\config\kis_devlp.yaml`, 통합문서 폴더·상위 폴더의 `수집기업_valuesearch.xlsx`)에 파일이 있을 때만 두 경로를 바꾼다. 다른 PC에서 다시 빌드할 때도 빌더가 같은 규칙으로 기본 위치를 쓴다.
 
 ## 대안
 - 통합문서를 git에 올리기: 토큰·매매기록이 원격에 남는다(비공개라도 금지 규칙).

@@ -29,7 +29,7 @@ excel_dashboard/
    시세·순위·수급 API는 모의투자 도메인에서 지원되지 않는 경우가 많아 실전 도메인으로 조회만 합니다.
 2. Windows + Microsoft 365 Excel (LET·FILTER·SORTBY·TAKE·VSTACK·HSTACK·XLOOKUP·LAMBDA 사용).
 3. **업종 분류 파일**: VALUESearch에서 내보낸 `수집기업_valuesearch.xlsx`(시트 `Sheet2`, 1행 머리글). 기본 위치는 저장소 루트이며,
-   옮기면 [설정]의 `vs_path`만 바꾸면 됩니다. 이 파일은 git에 올리지 않습니다.
+   옮기면 [설정]의 `vs_path`만 바꾸면 됩니다. 이 파일은 비공개 저장소에 들어 있어 clone하면 함께 받습니다(유료 자료이므로 저장소를 공개하지 마세요).
 4. 통합문서를 다시 만들 때만 Python + `pywin32`, `pyyaml` 필요(개발·검증 도구는 `requests`도 사용).
 
 ## 2. 통합문서 만들기·다시 만들기
@@ -64,7 +64,7 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 
 1. 노트북에서 메인 PC로 복사합니다(USB·OneDrive 등).
    - `excel_dashboard\KIS_PM_Dashboard.xlsm`과 `excel_dashboard\history\` 폴더 → 메인 PC의 한 폴더에 함께
-   - `수집기업_valuesearch.xlsx`(저장소 루트) → 통합문서와 같은 폴더(또는 바로 위 폴더)
+   - `수집기업_valuesearch.xlsx`(저장소 루트) → 통합문서와 같은 폴더(또는 바로 위 폴더). 메인 PC에 저장소를 clone해 두고 통합문서를 그 `excel_dashboard\`에 두면 따로 옮길 필요 없음
    - `C:\Users\<노트북 사용자>\KIS\config\kis_devlp.yaml` → 메인 PC의 `C:\Users\<메인 사용자>\KIS\config\kis_devlp.yaml`. 앱키·시크릿이 들어 있으니 메일·클라우드 말고 USB 등으로 옮기세요.
 2. 메일·다운로드로 받은 파일이면 파일을 오른쪽 클릭 → [속성] → **[차단 해제]**에 체크합니다(안 하면 매크로가 막혀 버튼이 동작하지 않음).
 3. 통합문서를 열고 **[콘텐츠 사용]**. [설정]의 KIS 설정 파일 경로(`cfg_path`)와 VALUESearch 경로(`vs_path`)가 이 PC 위치로 자동으로 바뀝니다(위 위치에 파일이 있을 때. 버튼을 누를 때도 다시 확인). 그래도 경로 오류가 나면 [설정]에서 두 값을 직접 고칩니다.
@@ -78,7 +78,8 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 git clone https://github.com/financeis/kis-pm-dashboard.git   # 비공개 저장소: 처음에 GitHub 로그인 창이 뜸
 cd kis-pm-dashboard
 pip install pywin32 pyyaml requests
-# 노트북의 KIS_PM_Dashboard.xlsm(+ history\)을 excel_dashboard\에, 수집기업_valuesearch.xlsx를 저장소 루트에 복사한 뒤
+# kis_devlp.yaml을 %USERPROFILE%\KIS\config\에 두고, 노트북의 KIS_PM_Dashboard.xlsm(+ history\)을 excel_dashboard\에 복사한 뒤
+# (VALUESearch 파일은 저장소에 들어 있음. 통합문서 없이 새로 만들려면 --no-migrate --empty)
 python excel_dashboard/build_dashboard.py
 ```
 
@@ -207,7 +208,7 @@ VBA로 자동화할 때는 `Application.CalculateUntilAsyncQueriesDone`을 쓰�
 
 - 앱키·시크릿은 통합문서에 저장되지 않습니다(Power Query가 `kis_devlp.yaml`을 직접 읽음).
 - 숨김 시트 `_sys`의 `tblToken`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`의 백업본에도 들어 있으니 남에게 보내기 전에 이 표 내용을 지우세요. `.xlsm`·`backup/`·`history/`는 git에서 제외됩니다.
-- 코드는 비공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력·VALUESearch 파일은 저장소에 들어가지 않습니다.
+- 코드는 비공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력은 저장소에 들어가지 않습니다. VALUESearch 파일(유료 자료)은 비공개라서 넣었으니 저장소를 공개로 바꾸지 마세요.
 - 저장소 루트의 `kis_devlp.yaml`은 공식 예제의 빈 양식으로 git에 들어 있습니다. 이 PC에서는 그 파일에 실제 앱키를 적어 두었기 때문에, 실수로 커밋되지 않도록 git이 로컬 변경을 무시하게 해 두었습니다(`git update-index --skip-worktree kis_devlp.yaml`, 되돌리기는 `--no-skip-worktree`). 다른 PC에서도 실제 값은 `~/KIS/config/kis_devlp.yaml`에만 두세요.
 - 대회 계좌 잔고는 자동으로 가져오지 않습니다(모의투자 앱키 없음). 대회 체결 내역을 [매매일지]에 옮겨 적습니다.
 
