@@ -2,3 +2,10 @@
 *.xlsx
 ~$*.xlsx
 __pycache__/
+# 매크로 포함 통합문서·백업·이력 CSV: 토큰 캐시와 개인 데이터가 들어 있음
+*.xlsm
+~$*.xlsm
+backup/
+history/
+# 빌드 작업 폴더(빌더가 여기서 만든 뒤 출력 위치로 옮김 — 실패하면 지움)
+.build_tmp/
