@@ -25,6 +25,8 @@
 //    시가총액 대비 %는 대회종목 표가 이 억원 합과 시가총액으로 계산한다.
 //  - 실행 모드(tblRunCtl 키 mode): full([전체])에서만 호출. build(빈칸·알 수 없는 값 포함)·quick·sector·analysis는 호출 없이
 //    자기 표 → 정적 표 tblFlowUSeed → 빈 표(열·형식 모두) 순으로 돌려준다.
+//  - 같은 [전체] 실행 안에서 다시 평가되면(자기 표의 가장 늦은 조회시각이 tblRunCtl started 이후) 조회하지 않고 자기 표를 돌려준다
+//    — 새로 고침 직후 Excel의 백그라운드 재평가가 종목 수만큼 KIS를 또 부르는 것을 막음(아래 Main 주석). started가 비면 확인 안 함.
 //  - 상태: 성공 행 OK, 종목 하나가 실패하면 그 행만 "오류: 사유"(값은 빈칸, 조회시각만 채움), 전부 실패하면 오류로 올려 직전 표 유지
 //    (fnFallback, 열 형식은 다시 입힘 — 날짜가 일련번호로 보이지 않게). 페이지 행이 없으면 열만 있는 빈 표.
 //  - 행 순서: fnPageRows() 순서(대회 종목 → 유니버스 밖). 종목코드는 텍스트.
@@ -38,15 +40,15 @@ let
     Types = {{"종목코드", type text}, {"기준일", type date}} & List.Transform(NumCols, each {_, type number})
             & {{"상태", type text}, {"조회시각", type datetime}},
 
-    // 실행 모드: 버튼 매크로가 tblRunCtl의 mode에 full을 쓴 실행에서만 KIS를 호출
-    Mode =
+    // 실행 제어 tblRunCtl(키, 값): mode — 버튼 매크로가 full을 쓴 실행에서만 KIS를 호출, started — 버튼 실행 시작 시각(매크로가 씀)
+    RunCtl = try Excel.CurrentWorkbook(){[Name = "tblRunCtl"]}[Content] otherwise null,
+    RunValue = (key as text) as any =>
         let
-            T = try Excel.CurrentWorkbook(){[Name = "tblRunCtl"]}[Content] otherwise null,
-            Hit = if T = null or not Table.HasColumns(T, {"키", "값"}) then {}
-                  else List.Select(Table.ToRecords(T), each (try Text.Lower(Text.Trim(Text.From([키]))) otherwise null) = "mode"),
-            V = if List.IsEmpty(Hit) then null else Hit{0}[값]
+            Hit = if RunCtl = null or not Table.HasColumns(RunCtl, {"키", "값"}) then {}
+                  else List.Select(Table.ToRecords(RunCtl), each (try Text.Lower(Text.Trim(Text.From([키]))) otherwise null) = key)
         in
-            if V = null then "" else (try Text.Lower(Text.Trim(Text.From(V))) otherwise ""),
+            if List.IsEmpty(Hit) then null else Hit{0}[값],
+    Mode = let V = RunValue("mode") in if V = null then "" else (try Text.Lower(Text.Trim(Text.From(V))) otherwise ""),
     Live = Mode = "full",
 
     // build 등(호출 없음): 자기 표 → tblFlowUSeed → 빈 표. 값 형식을 계약대로 맞추고, 칸별 변환 실패는 빈칸
@@ -76,8 +78,23 @@ let
            else if HasRows(Seed) then Conform(Seed)
            else Table.TransformColumnTypes(#table(Columns, {}), Types),
 
-    // full: 페이지 행 종목마다 종목별 투자자매매동향(일별) 1회
-    Main =
+    // 같은 버튼 실행 안에서 다시 평가될 때(새로 고침 직후 Excel이 쿼리를 백그라운드에서 한 번 더 평가함 — 아래 Main 주석)는
+    // 조회하지 않고 방금 적재한 자기 표를 돌려준다: 자기 표의 가장 늦은 조회시각이 이번 실행의 started 이후면 이미 조회한 것.
+    // started가 비어 있으면(하네스 시험 등) 이 확인은 하지 않는다. 셀 값은 일시·날짜·일련번호·텍스트로 올 수 있다(변환 실패는 빈칸).
+    Stamp = (v as any) as nullable datetime =>
+        if v = null then null
+        else if v is datetime then v
+        else if v is date then DateTime.From(v)
+        else if v is number then (try DateTime.From(v) otherwise null)
+        else if v is text then (try DateTime.FromText(Text.Trim(v), "en-US") otherwise null)
+        else null,
+    Started = try Stamp(RunValue("started")) otherwise null,
+    LastStamp = if not HasRows(Own) then null
+                else List.Max(List.RemoveNulls(List.Transform(Table.Column(Own, "조회시각"), (v) => try Stamp(v) otherwise null))),
+    Surveyed = Started <> null and LastStamp <> null and LastStamp >= Started,
+
+    // full: 페이지 행 종목마다 종목별 투자자매매동향(일별) 1회. 함수로 두어 full이고 이번 실행에서 아직 조회하지 않았을 때만 부른다
+    Survey = () as table =>
         let
             Now = DateTime.LocalNow(),
             Today = Date.From(Now),
@@ -157,10 +174,18 @@ let
             if List.IsEmpty(Checked) then Table.TransformColumnTypes(#table(Columns, {}), Types)
             else Table.TransformColumnTypes(Table.FromRecords(Checked, Columns, MissingField.UseNull), Types),
 
-    Result = if Live then Main else Kept,
+    // Excel은 새로 고침이 끝난 직후 쿼리를 백그라운드에서 한 번 더 평가하고, 최상위 단계도 따로 평가한다(2026-10-01 하네스 +
+    // 모의 서버 실측, 동기·백그라운드 새로 고침 모두). 이 평가는 Power Query 캐시에 없는 요청을 서버로 그대로 보낸다.
+    //  ① 조회를 값으로 된 단계로 두었을 때는 표를 처음 적재하는 새로 고침이 build 모드여도 그 단계를 평가해 종목 수만큼 호출했다
+    //     → 조회는 함수(Survey)로 두고 full일 때만 부른다(함수 값인 단계는 평가해도 호출하지 않음).
+    //  ② full 새로 고침 뒤에는 같은 요청이 한 번 더 나갔다(호출 2배) → 위 Surveyed 확인으로 막는다.
+    //     (모든 종목이 실패해 직전 표로 돌아간 경우엔 조회시각이 그대로라 막지 못하고 한 번 더 시도한다.)
+    //  ③ 표를 처음 적재한 뒤·통합문서를 연 뒤 처음 하는 새로 고침에서는 추가 평가가 자기 표가 갱신되기 전에 함께 돌아 ②의 확인을
+    //     통과하므로 그 한 번은 호출이 최대 2배가 될 수 있다(실측). 버튼 매크로가 그 표를 build 모드로 먼저 한 번 새로 고침해 두면 생기지 않는다.
+    Main = if Live and not Surveyed then Survey() else Kept,
     // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지.
     // fnFallback 결과는 형식이 없는 표라 날짜 열이 일련번호(일반 서식)로 적재되므로 Conform으로 열 형식을 다시 입힘(값은 그대로)
-    Tried = try Table.Buffer(Result),
+    Tried = try Table.Buffer(Main),
     Final = if Tried[HasError] then Conform(fnFallback("tblFlowU", Columns, Tried[Error][Message])) else Tried[Value]
 in
     Final
