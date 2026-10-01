@@ -12,6 +12,8 @@
 //    모든 종목이 실패하면 오류로 올려 직전 표를 유지(fnFallback). 보유·관심 종목이 없으면 열만 있는 빈 표.
 let
     Cols = {"일시", "종목코드", "종목명", "제목", "출처", "상태", "조회시각"},
+    Types = {{"일시", type datetime}, {"종목코드", type text}, {"종목명", type text}, {"제목", type text}, {"출처", type text},
+             {"상태", type text}, {"조회시각", type datetime}},
     Main =
         let
             Now = DateTime.LocalNow(),
@@ -76,8 +78,9 @@ let
             Out = Table.RemoveColumns(Table.Combine({Latest, ErrRows}), {"__srno"})
         in
             Out,
-    // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지
+    // 실패(토큰·네트워크·호출제한 등) 시 오류 대화상자 대신 직전 결과를 유지. 직전 표를 다시 읽으면 열 형식이 없어(any)
+    // 일시·조회시각이 일련번호로 보이므로 같은 형식을 다시 지정한다
     Tried = try Table.Buffer(Main),
-    Final = if Tried[HasError] then fnFallback("tblNews", Cols, Tried[Error][Message]) else Tried[Value]
+    Final = if Tried[HasError] then Table.TransformColumnTypes(fnFallback("tblNews", Cols, Tried[Error][Message]), Types) else Tried[Value]
 in
     Final

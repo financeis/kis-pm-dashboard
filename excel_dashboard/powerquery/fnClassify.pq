@@ -18,9 +18,16 @@
 //      그대로 둔다(새 값을 만들지 않음).
 //    · 섹터: 설정 sector_basis(대분류/업종/세부/대테마 — 비거나 다른 값이면 기본 세부)의 값. 그 값이 없으면
 //      세부 → 업종 → 대분류 → 입력 KRX업종 순으로 대체(대테마 기준도 같음). 모두 없으면 빈칸.
-//  - 수정표(tblOverride): 공란 = 수정 없음. 종목코드가 6자리 [0-9A-Z]가 아니거나(정규화 후) 대회편입이 공란·추가·제외가 아닌 행은
-//    통째로 무시한다(경고 표시는 빌더가 표 옆에 만든다). 같은 종목코드가 여러 행이면 칸마다 아래쪽 행의 비어 있지 않은 값이 우선.
-//  - 읽는 표: tblContest·tblOverride·tblThemeBase·tblClass·tblSettings (표가 없으면 빈 표로 취급). 빈 행(종목코드 없음)은 무시.
+//  - 수정표(tblOverride): 공란 = 수정 없음. 종목코드가 6자리 [0-9A-Z]가 아니거나(정규화 후) 대회편입이 공란·추가·제외가 아니거나
+//    종목코드가 종목DB(tblUniverse)에 없는 행은 통째로 무시한다(오타 코드가 이름 없는 대회 종목 행이 되지 않게). 같은 종목코드가 여러
+//    행이면 칸마다 아래쪽 행의 비어 있지 않은 값이 우선.
+//    · 종목DB 확인은 tblUniverse가 있고 종목코드 칸이 하나라도 채워져 있을 때만 한다. 표가 없거나 비었으면(하네스 시험,
+//      T_Universe를 처음 적재하기 전의 빌드) 확인하지 않고 형식만 본다.
+//    · 셀 값 정리는 [설정]의 경고 수식(빌더 F_OVERRIDE_WARN — '수정표 n행 무시됨')과 같다: 줄바꿈 없는 공백(U+00A0)·전각 공백(U+3000)
+//      → 일반 공백, 제어 문자(코드 0~31) 제거, 앞뒤 공백 제거, 종목코드는 대문자·숫자만 6자리 미만이면 앞 0 채움. 경고 수식도 종목DB가
+//      비었으면 종목DB 확인을 하지 않으므로, 무시되는 행과 경고 건수가 같다.
+//  - 읽는 표: tblContest·tblOverride·tblThemeBase·tblClass·tblSettings, 수정표 행이 있으면 tblUniverse(종목코드 열만)
+//    (표가 없으면 빈 표로 취급). 빈 행(종목코드 없음)은 무시.
 //  - 사용 예) fnClassify(Table.SelectColumns(U, {"종목코드", "KRX업종"}))   // 종목DB
 //            fnClassify(#table({"종목코드"}, {{"005930"}}))                  // 종목 1개(종목분석)
 (input as table) as table =>
@@ -56,15 +63,37 @@ let
     // 기본 3: 기본 테마표
     Theme = MapOf(List.Transform(Rows("tblThemeBase"), (r) => {Code(F(r, "종목코드")), [대테마 = F(r, "대테마"), 세부테마 = F(r, "세부테마")]})),
 
-    // 수정표: 잘못된 행은 통째로 무시, 같은 코드는 칸마다 아래쪽 행의 비어 있지 않은 값 우선
+    // 수정표 셀 값 → 텍스트(빈 값은 null). 경고 수식의 정리 규칙(머리말)과 같게: U+00A0·U+3000 → 공백, 코드 0~31 문자 제거,
+    // 앞뒤 공백(" ") 제거
+    OvTxt = (v as any) as nullable text =>
+        let
+            s0 = if v = null then null else try Text.From(v) otherwise null,
+            s1 = if s0 = null then null
+                 else Text.Replace(Text.Replace(s0, Character.FromNumber(160), " "), Character.FromNumber(12288), " "),
+            t = if s1 = null then null else Text.Trim(Text.Remove(s1, List.Transform({0..31}, Character.FromNumber)), " ")
+        in
+            if t = null or t = "" then null else t,
+    OF = (r as record, k as text) as nullable text => OvTxt(try Record.FieldOrDefault(r, k, null) otherwise null),
+    // 종목DB 종목코드 집합(정규화한 코드 → true). 표가 없거나 종목코드 칸이 모두 비었으면 null = 종목DB 확인 안 함(머리말 —
+    // 경고 수식의 '종목DB에 종목코드가 하나라도 있을 때'와 같은 기준). 수정표에 형식이 맞는 행이 있을 때만 평가된다
+    // (아래 'or'는 앞이 참이면 뒤를 평가하지 않음)
+    UnivSet =
+        let
+            t = try Excel.CurrentWorkbook(){[Name = "tblUniverse"]}[Content] otherwise null,
+            filled = if t = null or not List.Contains(Table.ColumnNames(t), "종목코드") then {}
+                     else List.Select(List.Transform(Table.Column(t, "종목코드"), (v) => try Txt(v) otherwise null), each _ <> null),
+            codes = List.Distinct(List.RemoveNulls(List.Transform(filled, Code)))
+        in
+            if List.IsEmpty(filled) then null else Record.FromList(List.Repeat({true}, List.Count(codes)), codes),
+    // 수정표: 잘못된 행·종목DB에 없는 코드의 행은 통째로 무시, 같은 코드는 칸마다 아래쪽 행의 비어 있지 않은 값 우선
     OvFields = {"대회편입", "대테마", "세부테마", "NICS 대분류", "NICS 업종", "NICS 세부"},
     OvRows = List.RemoveNulls(List.Transform(Rows("tblOverride"), (r) =>
         let
-            c = Code(F(r, "종목코드")),
-            m = F(r, "대회편입")
+            c = Code(OF(r, "종목코드")),
+            m = OF(r, "대회편입")
         in
-            if c = null or not (m = null or m = "추가" or m = "제외") then null
-            else {c, List.Transform(OvFields, (k) => F(r, k))})),
+            if c = null or not (m = null or m = "추가" or m = "제외") or (UnivSet <> null and not Record.HasFields(UnivSet, c)) then null
+            else {c, List.Transform(OvFields, (k) => OF(r, k))})),
     OvCodes = List.Distinct(List.Transform(OvRows, each _{0})),
     OvMerged = List.Transform(OvCodes, (c) =>
         let

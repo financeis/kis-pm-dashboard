@@ -11,8 +11,9 @@
   세션 달력 = KOSPI(0001) 일별 날짜(FHPTJ04040000) — spec §3.
   시가총액(억) = 현재가 × 상장주식수(주식현재가 시세 FHKST01010100의 lstn_stcn) — 통합문서는 종목 마스터의 상장주식수를 쓰므로 0.5% 허용.
 - 수급(R6): 종목별 투자자매매동향(일별, FHPTJ04160001) 외국인·기관계 최근 1·5·21 완료 세션 합(백만원 ÷ 100 = 억원), 시총 대비 비율.
-- 실적·후행 밸류(R7): 손익계산서·재무비율(분기, 누적 → 분기 단독), 공시 지연(1~3분기 + 45일, 4분기 + 90일)으로 '그날 알려진' TTM EPS·BPS,
-  후행 PER·PBR, PER·PBR 변화 3M·6M·YTD·1Y, 최근 분기·YoY 3개·실적 상태·ROE.
+- 실적·후행 밸류(R7): 손익계산서·재무비율(분기, 누적 → 분기 단독), 후행 PER·PBR(최근 4개 분기 TTM EPS·최근 분기 BPS — 공개기준일과
+  무관), PER·PBR 변화 3M·6M·YTD·1Y(분자·분모 모두 공시 지연(1~3분기 + 45일, 4분기 + 90일)으로 '그날 알려진' TTM EPS·BPS),
+  최근 분기·YoY 3개·실적 상태·ROE.
 - 목표주가(R8): 종목투자의견(FHKST663300C0, 날짜 분할로 기간 전체) → 기준일 D·D−1개월·D−3개월 컨센서스(증권사별 6개월 내 마지막 목표가 평균),
   괴리율·증권사 수·목표가 변화 1M·3M·최근 의견.
 - KIS 추정(R9): 종목추정실적(HHKST668300C0) EPS ÷ 10·연도는 output4 dt 라벨, Fwd EPS = FY1 × r/12 + FY2 × (12 − r)/12,
@@ -346,6 +347,7 @@ def shift_ym(k: str, n: int) -> str:
 
 
 def ttm_eps(q: dict[str, dict], d: dt.date) -> Optional[float]:
+    """날 d에 알려진(공개기준일 ≤ d) 가장 최근 분기와 그 앞 3개 분기의 단독 EPS 합 — PER 변화(분자·분모)용."""
     known = sorted([k for k, r in q.items() if r["pub"] <= d and any(r.get(f) is not None for f in ("eps", "bps", "sales"))])
     if not known:
         return None
@@ -358,8 +360,30 @@ def ttm_eps(q: dict[str, dict], d: dt.date) -> Optional[float]:
 
 
 def bps_at(q: dict[str, dict], d: dt.date) -> Optional[float]:
+    """날 d에 알려진 가장 최근 분기의 BPS — PBR 변화(분자·분모)용."""
     known = sorted([k for k, r in q.items() if r["pub"] <= d and any(r.get(f) is not None for f in ("eps", "bps", "sales"))])
     return q[known[-1]].get("bps") if known else None
+
+
+def latest_quarter(q: dict[str, dict]) -> Optional[str]:
+    """값이 하나라도 있는 가장 최근 분기(결산년월) — 실적 저장소의 첫 행과 같은 분기. 없으면 None."""
+    filled = sorted(k for k, r in q.items() if any(r.get(f) is not None for f in ("sales", "op", "ni", "eps", "bps", "roe")))
+    return filled[-1] if filled else None
+
+
+def ttm_eps_latest(q: dict[str, dict]) -> Optional[float]:
+    """후행 PER용 TTM EPS: 최근 분기와 그 앞 3개 분기(3개월 간격)의 단독 EPS 합, 공개기준일과 무관. 하나라도 없으면 None."""
+    k0 = latest_quarter(q)
+    if k0 is None:
+        return None
+    vals = [q.get(k, {}).get("eps_q") for k in (k0, shift_ym(k0, -3), shift_ym(k0, -6), shift_ym(k0, -9))]
+    return None if any(v is None for v in vals) else sum(vals)
+
+
+def bps_latest(q: dict[str, dict]) -> Optional[float]:
+    """PBR용 BPS: 최근 분기의 BPS(공개기준일과 무관)."""
+    k0 = latest_quarter(q)
+    return q[k0].get("bps") if k0 is not None else None
 
 
 def consensus(ops: list[dict], asof: dt.date, months: int = TARGET_MONTHS) -> tuple[Optional[float], Optional[int]]:
@@ -623,9 +647,11 @@ def main() -> int:
         inc, rat = src.fin(code)
         q = standalone(inc, rat)
         pdate = pm.get("가격기준일") or today
+        # 후행 PER·PBR = 최근 분기 기준(공개기준일과 무관), PER·PBR 변화의 분자 = 오늘 알려진 값(공시 지연 규칙)
+        ttm_l, bps_l = ttm_eps_latest(q), bps_latest(q)
         ttm0, bps0 = ttm_eps(q, today), bps_at(q, today)
-        per = cur / ttm0 if cur and ttm0 and ttm0 > 0 else None
-        pbr = cur / bps0 if cur and bps0 and bps0 > 0 else None
+        per = cur / ttm_l if cur and ttm_l and ttm_l > 0 else None
+        pbr = cur / bps_l if cur and bps_l and bps_l > 0 else None
         rep.add("실적·밸류(R7)", code, "후행PER", per, w.get("후행PER"))
         rep.add("실적·밸류(R7)", code, "PBR", pbr, w.get("PBR"))
         pos = {d: i for i, d in enumerate(cal)}

@@ -305,12 +305,17 @@ OVERRIDE_WARN_CELL = "AB5"        # 무시된 수정표 행 경고 칸(F_OVERRID
 OVERRIDE_ANCHOR = "W8"            # tblOverride 머리글 왼쪽 위 칸(build_inputs가 빈 표로 만듦, 사용자 행 이관은 T23)
 OVERRIDE_HEADERS = ["종목코드", "대회편입", "대테마", "세부테마", "NICS 대분류", "NICS 업종", "NICS 세부", "메모"]
 OVERRIDE_WIDTHS = [10, 9, 12, 14, 12, 14, 16, 24]   # W:AD 열 너비 (V열은 3폭 여백)
-# 수정표에서 무시되는 행 수 경고: fnClassify와 같은 정규화(앞뒤 공백 제거·대문자·숫자만 6자리 미만이면 앞 0 채움) 뒤
+# 수정표에서 무시되는 행 수 경고: fnClassify와 같은 정리·정규화(U+00A0·U+3000 → 공백, 코드 0~31 문자 제거, 앞뒤 공백 제거,
+# 대문자, 숫자만 6자리 미만이면 앞 0 채움) 뒤
 #  ① 종목코드가 6자리 [0-9A-Z]가 아님(빈 코드 포함) ② 대회편입이 공란·추가·제외가 아님 ③ 종목DB(tblUniverse)에 없는 코드
-#  중 하나인 행을 센다. 메모만 있는 행·완전히 빈 행은 세지 않는다. 없으면 빈칸.
+#  중 하나인 행을 센다(fnClassify가 무시하는 행과 같다). ③은 종목DB에 종목코드가 하나라도 있을 때만 본다 — fnClassify도 종목DB가
+#  비었으면 종목DB 확인을 하지 않는다. 메모만 있는 행·완전히 빈 행은 세지 않는다. 없으면 빈칸.
+#  U+00A0은 UNICHAR(160)으로 찾는다 — 한국어 Excel의 CHAR(160)은 코드 페이지 949 기준이라 일반 공백(UNICODE 32)을 돌려줘
+#  U+00A0을 바꾸지 못한다(2026-10-02 하네스 실측).
 F_OVERRIDE_WARN = (
-    '=LET(x_cln,LAMBDA(v_x,IFERROR(TRIM(CLEAN(SUBSTITUTE(SUBSTITUTE(v_x&"",CHAR(160)," "),UNICHAR(12288)," "))),"")),'
+    '=LET(x_cln,LAMBDA(v_x,IFERROR(TRIM(CLEAN(SUBSTITUTE(SUBSTITUTE(v_x&"",UNICHAR(160)," "),UNICHAR(12288)," "))),"")),'
     'x_has,LAMBDA(s_x,k_x,IF(LEN(s_x)=0,FALSE,AND(ISNUMBER(FIND(MID(s_x,SEQUENCE(LEN(s_x)),1),k_x))))),'
+    'x_u,SUM(--(LEN(tblUniverse[종목코드]&"")>0)),'
     'x_bad,MAP(tblOverride[종목코드],tblOverride[대회편입],tblOverride[대테마],tblOverride[세부테마],'
     'tblOverride[NICS 대분류],tblOverride[NICS 업종],tblOverride[NICS 세부],'
     'LAMBDA(a_1,a_2,a_3,a_4,a_5,a_6,a_7,LET(s_0,UPPER(x_cln(a_1)),'
@@ -318,7 +323,7 @@ F_OVERRIDE_WARN = (
     'm_0,x_cln(a_2),n_e,LEN(s_0&m_0&x_cln(a_3)&x_cln(a_4)&x_cln(a_5)&x_cln(a_6)&x_cln(a_7))>0,'
     'v_c,AND(LEN(s_1)=6,x_has(s_1,"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")),'
     'v_m,OR(m_0="",m_0="추가",m_0="제외"),'
-    'i_u,IF(v_c,ISNUMBER(XMATCH(s_1,tblUniverse[종목코드])),FALSE),'
+    'i_u,IF(v_c,OR(x_u=0,ISNUMBER(XMATCH(s_1,tblUniverse[종목코드]))),FALSE),'
     'AND(n_e,NOT(AND(v_c,v_m,i_u)))))),'
     'x_n,SUM(--x_bad),IF(x_n=0,"","⚠ 수정표 "&x_n&"행 무시됨(종목코드·값 확인)"))'
 )
@@ -2469,6 +2474,35 @@ def _cleanup_work(work: str) -> None:
         pass
 
 
+def resume_refusal(a) -> str | None:
+    """숨은 개발용 옵션 --resume을 거절할 사유를 돌려준다(실행해도 되면 None).
+
+    --resume은 이관 없이 체크포인트 파일로 다시 만든 뒤 출력 파일을 바꾸므로(덮기 전 백업은 함), 체크포인트 이후에 출력 통합문서에
+    입력한 데이터(매매일지·설정·스냅샷 등)가 결과물에서 빠질 수 있다. 그래서 --out을 함께 주고 그 경로가 기본 통합문서
+    (excel_dashboard/KIS_PM_Dashboard.xlsm·.xlsx — 확장자와 관계없이 같은 이름이면 .xlsm으로 바뀌어 같은 파일이 됨)가 아닐 때만 허용한다.
+
+    Args:
+        a: argparse 결과(resume·out 속성; out은 주지 않았으면 None).
+
+    Returns:
+        거절 사유(한국어 한 문장) 또는 None.
+
+    Example:
+        resume_refusal(argparse.Namespace(resume="cp.xlsm", out=None))   # → 사유 문자열
+    """
+    if not getattr(a, "resume", None):
+        return None
+    hint = "--out으로 기본 통합문서가 아닌 스크래치 경로(예: --out D:/scratch/KIS_PM_Dashboard.xlsm)를 함께 주세요"
+    if getattr(a, "out", None) is None:
+        return f"--resume(개발용 체크포인트 재개)은 이관 없이 다시 만들어 출력 파일을 바꾸므로 기본 통합문서에는 쓰지 않습니다 — {hint}"
+    stem = os.path.normcase(os.path.splitext(os.path.realpath(os.path.abspath(a.out)))[0])
+    default_stem = os.path.normcase(os.path.splitext(os.path.realpath(DEFAULT_OUT))[0])
+    if stem == default_stem:
+        return (f"--resume(개발용 체크포인트 재개)은 기본 통합문서({DEFAULT_OUT} · .xlsx)를 출력으로 쓸 수 없습니다"
+                f"(체크포인트 이후 입력한 데이터가 빠질 수 있음) — {hint}")
+    return None
+
+
 def run_build(a) -> int:
     """명령줄 인수로 빌드 전체를 실행하고 종료 코드를 돌려준다: 0 성공 · 1 빌드 실패 · 2 토큰 갱신 필요 · 3 이관·설정 문제(시작 전 중단)."""
     log: list[str] = []
@@ -2478,7 +2512,11 @@ def run_build(a) -> int:
         log.append(msg)
 
     t0 = time.time()
-    out = os.path.abspath(a.out)
+    refusal = resume_refusal(a)
+    if refusal:
+        say(f"[중단] {refusal} (Excel을 띄우지 않고 멈춤)")
+        return 3
+    out = os.path.abspath(a.out if a.out is not None else DEFAULT_OUT)
     if not out.lower().endswith(".xlsm"):
         new_out = os.path.splitext(out)[0] + ".xlsm"
         say(f"⚠ 결과물은 매크로 포함 형식(.xlsm)이라 출력 확장자를 바꿉니다: {new_out}")
@@ -2616,7 +2654,7 @@ def run_build(a) -> int:
 
 def main():
     ap = argparse.ArgumentParser(description="KIS PM 일일 대시보드(.xlsm) 생성 — 기존 통합문서에서 자동 이관")
-    ap.add_argument("--out", default=DEFAULT_OUT, help="출력 .xlsm 경로 (기본 excel_dashboard/KIS_PM_Dashboard.xlsm)")
+    ap.add_argument("--out", default=None, help="출력 .xlsm 경로 (기본 excel_dashboard/KIS_PM_Dashboard.xlsm)")
     ap.add_argument("--cfg", default=None, help="kis_devlp.yaml 경로 (기본: 이관한 설정의 cfg_path, 없으면 ~/KIS/config/kis_devlp.yaml)")
     ap.add_argument("--empty", action="store_true", help="(이관 원본이 없을 때) 샘플 매매·관심종목 없이 생성")
     ap.add_argument("--visible", action="store_true")
