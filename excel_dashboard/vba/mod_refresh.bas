@@ -18,7 +18,13 @@
 '   쿼리 T_X는 표 tblX에 적재된다(T_A_X는 tblA_X). 매크로는 표의 QueryTable을 새로 고친다.
 '
 ' 실행 순서
-'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다.
+'   0) 이 Excel 세션의 첫 버튼 실행이면(모듈 변수 m_warmed) 먼저 mode=build로 두고 이 버튼의 표(T_Token과 CSV 단계 제외)를
+'      한 번씩 동기 새로 고침한다 - build 모드라 KIS 호출이 없다. 파일을 연 뒤 첫 새로 고침은 Excel이 쿼리를 한 번 더
+'      평가해 KIS 호출이 겹칠 수 있어(실측), 그 겹치는 평가를 호출 없는 모드에서 미리 치르게 하려는 것(2026-10-01 T23).
+'      예열 중 실패는 무시한다(본 단계에서 다시 판정). Esc로 멈추면 다음 실행에서 다시 예열한다.
+'   1) tblRunCtl에 mode(위 값)와 started(시작 시각)를 쓴다. 둘 중 하나라도 쓰지 못하면 단계를 하나도 실행하지 않고
+'      멈춘다(요약에 사유). mode를 못 쓰면 쿼리가 build로 돌아 조회가 없고, started를 못 쓰면 지난 실행의 started가 남아
+'      쿼리의 재호출 방지 확인(자기 표 조회시각 >= started)이 이번 조회까지 막을 수 있기 때문.
 '   2) 단계마다 표의 QueryTable을 동기 새로 고침한다(BackgroundQuery를 잠시 끄고 Refresh False, 끝나면 원래
 '      값으로 되돌림. 그 표가 백그라운드 새로 고침 중이면 끝날 때까지 최대 120초 기다림). 상태 표시줄에
 '      "[전체] 4/16 T_PxStore 새로 고침 중..." 형태로 진행을 표시한다. 한 단계가 실패해도 멈추지 않고 다음
@@ -84,6 +90,9 @@ Private Const TOKEN_MIN_MINUTES As Long = 5
 Private Const WAIT_BUSY_SECONDS As Long = 120
 Private Const REASON_MAX As Long = 200
 Private Const REASON_MAX_BOX As Long = 60
+
+' 이 Excel 세션에서 첫 버튼 실행 전 예열(build 모드 새로 고침)을 마쳤는지. VBA 프로젝트가 초기화되면 False로 돌아간다.
+Private m_warmed As Boolean
 
 ' 한 번의 버튼 실행 상태 (재진입은 m_running으로 막는다)
 Private m_running As Boolean
@@ -205,10 +214,23 @@ Private Sub RunButton(ByVal modeName As String, ByVal title As String, ByVal tim
     BuildSteps steps
     nSteps = m_n
 
+    If Not m_warmed Then
+        If Not SetKeyValue("tblRunCtl", "mode", "build", True, why) Then
+            AbortRun "mode를 build로 쓰지 못함: " & why
+            GoTo Finalize
+        End If
+        WarmUp title, nSteps
+        If m_cancelled Then GoTo Finalize
+        m_warmed = True
+    End If
+
     If Not SetKeyValue("tblRunCtl", "mode", modeName, True, why) Then
-        AddResult "실행 제어(tblRunCtl)", "", V_FAIL, 0, why
-    ElseIf Not SetKeyValue("tblRunCtl", "started", Now, True, why) Then
-        AddNote why
+        AbortRun "mode를 쓰지 못함: " & why
+        GoTo Finalize
+    End If
+    If Not SetKeyValue("tblRunCtl", "started", Now, True, why) Then
+        AbortRun "started를 쓰지 못함: " & why
+        GoTo Finalize
     End If
 
     For i = 1 To nSteps
@@ -276,6 +298,32 @@ Crash:
         AddResult "매크로 오류", "", V_FAIL, 0, CleanText(Err.Description)
     End If
     Resume Finalize
+End Sub
+
+' 실행 제어 값을 쓰지 못해 버튼 실행을 멈춘다. 단계들은 BuildSteps가 채운 '실행 안 함'(실패)으로 남고,
+' 정리 단계(Finalize)가 mode를 build로 되돌리고 상태 칸·요약에 이 사유를 남긴다.
+Private Sub AbortRun(ByVal reason As String)
+    AddResult "실행 제어(tblRunCtl)", "", V_FAIL, 0, _
+        Clip(CleanText(reason), REASON_MAX) & " - 실행을 멈춤(KIS 호출 없음)"
+End Sub
+
+' 이 Excel 세션의 첫 버튼 실행: 이 버튼의 표를 build 모드(KIS 호출 없음)로 한 번씩 새로 고친다(머리 주석 0번).
+' tblToken(T_Token은 모드와 상관없이 토큰을 확인)과 CSV 단계(표 없음)는 건너뛴다. 결과는 판정에 쓰지 않는다.
+Private Sub WarmUp(ByVal title As String, ByVal nSteps As Long)
+    Dim i As Long
+    Dim lo As ListObject
+    Dim why As String
+    For i = 1 To nSteps
+        If m_cancelled Then Exit Sub
+        If Len(m_tables(i)) > 0 And StrComp(m_tables(i), "tblToken", vbTextCompare) <> 0 Then
+            Set lo = FindTable(m_tables(i))
+            If Not lo Is Nothing Then
+                Application.StatusBar = title & " 첫 실행 준비(호출 없음) " & i & "/" & nSteps & " " & m_names(i) & Ellipsis()
+                DoEvents
+                RefreshTable lo, why
+            End If
+        End If
+    Next i
 End Sub
 
 ' 단계 목록을 결과 배열에 '실행 안 함'(실패)으로 먼저 채운다. 실행된 단계만 결과를 덮어쓴다.

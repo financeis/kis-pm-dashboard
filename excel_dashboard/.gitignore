@@ -7,3 +7,5 @@ __pycache__/
 ~$*.xlsm
 backup/
 history/
+# 빌드 작업 폴더(빌더가 여기서 만든 뒤 출력 위치로 옮김 — 실패하면 지움)
+.build_tmp/

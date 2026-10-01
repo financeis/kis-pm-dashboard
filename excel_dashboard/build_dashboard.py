@@ -1,9 +1,20 @@
-"""KIS PM 일일 대시보드(Excel + Power Query) 생성 스크립트.
+"""KIS PM 일일 대시보드(Excel + Power Query + VBA 버튼) 생성 스크립트 — 결과물 excel_dashboard/KIS_PM_Dashboard.xlsm.
 
-    python excel_dashboard/build_dashboard.py            # 샘플 매매일지 포함, 데이터 새로 고침까지 수행
-    python excel_dashboard/build_dashboard.py --empty    # 매매일지·관심종목을 비운 상태로 생성
-    python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 파일 경로 지정
+    python excel_dashboard/build_dashboard.py            # 기존 통합문서에서 이관해 다시 만듦(없으면 샘플 포함 새로 만듦)
+    python excel_dashboard/build_dashboard.py --empty    # (처음 만들 때) 매매일지·관심종목을 비운 상태로 생성
+    python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 파일 경로 지정(이관한 설정값보다 우선)
+    python excel_dashboard/build_dashboard.py --migrate-from D:/old/KIS_PM_Dashboard.xlsx   # 이관 원본 지정
+    python excel_dashboard/build_dashboard.py --no-migrate                # 이관 없이 새로 만듦(기존 파일은 백업)
 
+- 이관(spec R22): 원본 = --migrate-from > 출력 위치의 .xlsm > 같은 위치의 .xlsx. 원본은 Excel로 열지 않고 파일을 직접 읽는다
+  (migrate.py — 열면 '파일 열 때 새로 고침'으로 토큰이 새로 발급될 수 있음). 빌드 전에 원본을 backup\\<이름>_YYYYMMDD_HHMMSS로
+  복사하고, 매매일지·관심종목·설정(키별)·해외지표·휴장일·수정표·스냅샷·가격 저장소·세션 달력·주간 캐시·토큰 캐시를 옮긴다.
+  이관할 입력이 있으면 샘플을 넣지 않는다. 원본이 .xlsx였으면 성공 뒤 백업 폴더로 옮긴다. 원본을 못 읽으면 멈춘다.
+- 토큰: 원본 토큰의 남은 시간이 210분 미만이면 Excel을 띄우지 않고 멈춘다("토큰 갱신 필요"). 이관한 토큰을 새 통합문서의
+  tblToken에 먼저 넣어 T_Token이 재사용하게 한다(새 발급·알림톡 없음). 토큰 값은 어디에도 출력하지 않는다.
+- 빌드는 같은 폴더의 .build_tmp\\에서 하고, 성공하면 출력 위치로 옮긴다(실패하면 기존 통합문서는 그대로).
+- 버튼 전용 쿼리는 빌드 때 build 모드(KIS 호출 없음)로 한 번만 새로 고쳐 열 구조를 만들고, '모두 새로 고침'에서 뺀다.
+- VBA(vba/*.bas, UTF-8)는 코드 텍스트로 넣는다. 그동안만 레지스트리 AccessVBOM을 1로 켜고 성공·실패와 관계없이 원래대로 되돌린다.
 - Power Query(M) 원본은 excel_dashboard/powerquery/*.pq 에 있으며, 이 스크립트가 통합문서에 그대로 넣습니다.
 - 앱키/시크릿은 통합문서에 저장하지 않고 ~/KIS/config/kis_devlp.yaml 을 Power Query가 직접 읽습니다.
 - Windows + Microsoft 365 Excel 필요 (동적 배열 함수: LET, FILTER, SORTBY, TAKE, VSTACK, HSTACK, XLOOKUP).
@@ -11,9 +22,12 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime as dt
 import glob
 import os
+import re
+import shutil
 import sys
 import time
 
@@ -21,20 +35,46 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from xl_helpers import (  # noqa: E402
     C, NF, FONT, XL_CENTER, XL_LEFT, XL_RIGHT, XL_TOP, XL_VCENTER, XL_SHEET_HIDDEN, XL_LINE, XL_AREA,
     XL_COLUMN_CLUSTERED, XL_BAR_CLUSTERED, XL_LEGEND_TOP, XL_LEGEND_BOTTOM, XL_SECONDARY, XL_EDGE_BOTTOM,
-    XL_MEDIUM, add_calc_column, add_names, add_query, border, bottom_line, card, cf_databar, cf_expr, cf_heat, chart,
-    ensure_table_style, excel_pid, excel_serial, fill, freeze, hyperlink, load_query, new_excel, put, quit_excel, refresh, rgb,
-    section, series, set_col_format,
+    XL_MEDIUM, XL_SRC_RANGE, XL_YES, _vba_text, access_vbom, add_calc_column, add_names, add_query, add_vba_module, border,
+    bottom_line, card, cf_databar, cf_expr, cf_heat, chart, ensure_table_style, excel_pid, excel_serial, fill, freeze,
+    hyperlink, load_query, new_excel, put, quit_excel, refresh, rgb, save_xlsm, section, series, set_col_format,
     set_nf, set_palette, sheet_setup, style, style_axes, title_bar, validation_list, write_table,
 )
+import migrate  # noqa: E402
+from pages import page_analysis, page_company, page_news_events, page_sector  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PQ_DIR = os.path.join(HERE, "powerquery")
-DEFAULT_OUT = os.path.join(HERE, "KIS_PM_Dashboard.xlsx")
+DEFAULT_OUT = os.path.join(HERE, "KIS_PM_Dashboard.xlsm")
 DEFAULT_CFG = os.path.join(os.path.expanduser("~"), "KIS", "config", "kis_devlp.yaml")
+VBA_FILES = [os.path.join(HERE, "vba", "mod_refresh.bas")]
+CONTEST_CSV = os.path.join(HERE, "data", "contest_universe_20260930.csv")
+THEMES_CSV = os.path.join(HERE, "data", "themes_base.csv")
+BUILD_TMP_DIR = ".build_tmp"     # 출력 폴더 아래 작업 폴더: 같은 파일 이름으로 만들어(차트의 이름 참조 유지) 성공하면 옮김
+TOKEN_MIN_MINUTES = 210          # 원천 토큰 남은 시간 기준(3시간 30분) — T_Token 재발급 기준(3시간)보다 길게(plan §0)
 
-SHEETS = ["대시보드", "시장", "포트폴리오", "리스크", "성과", "시세판", "매매일지", "매매분석", "종목DB", "설정", "가이드", "_data", "_sys"]
 
-# 쿼리 → (시트, 위치, 표이름). 순서 = 빌드 시 새로 고침 순서
+def col_letter(n: int) -> str:
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+# 페이지 모듈 (pages/*.py) — 시트 순서대로. 각 모듈: SHEET, LOADS = [(쿼리, 표, 머리글 셀)], build(builder), prepare_tables(builder)
+PAGE_MODULES = [page_sector, page_company, page_analysis, page_news_events]
+
+# 시트 순서 (spec R19): 보이는 시트 15개(새 페이지 4개는 시장 다음) + 숨김 시트.
+#   _data 기존 PQ 원본 · _sys 토큰 캐시 · _calc 버튼 전용 계산·캐시 표(+ 증시 자금) · _store 가격 이력 저장소(약 13만 행이라 따로) ·
+#   _seed 빌더가 만드는 정적 표(대회 명단·기본 테마표·실행 제어·이관 Seed)
+SHEETS = ["대시보드", "시장", page_sector.SHEET, page_company.SHEET, page_analysis.SHEET, page_news_events.SHEET,
+          "포트폴리오", "리스크", "성과", "시세판", "매매일지", "매매분석", "종목DB", "설정", "가이드",
+          "_data", "_sys", "_calc", "_store", "_seed"]
+HIDDEN_SHEETS = [s for s in SHEETS if s.startswith("_")]
+NAV_ITEMS = [s for s in SHEETS if not s.startswith("_")]     # 모든 시트 상단 메뉴 링크(새 시트 포함)
+
+# 쿼리 → (시트, 위치, 표이름). 기존 15개 표 — 빈 표 임시 행(ensure_rows)·계산열·서식은 이 표들에만 쓴다
 LOADS = [
     ("T_Token", "_sys", "B2", "tblToken"),
     ("T_Universe", "종목DB", "B21", "tblUniverse"),
@@ -53,14 +93,92 @@ LOADS = [
     ("T_Risk", "리스크", "B12", "tblRisk"),
 ]
 
+# 버튼 전용 계산·캐시 표: _calc 시트 2행에 나란히(표마다 45열 간격 — 가장 넓은 tblPxMetrics가 38열, 겹치면 새로 고침 오류).
+# 가격 저장소(약 13만 행)는 _store 시트에 따로. 이 표들과 페이지 표에는 임시 행·행 추가/삭제를 하지 않는다(표 행 삭제가
+# 같은 열의 셀을 끌어올리고, 쌓인 페이지 표에서는 Excel이 행 추가를 거부함 — 페이지 작업 실측).
+CALC_SPACING = 45
+# 증시 자금(R13, 새 일반 쿼리 — [시장]이 구조적 참조로 읽으므로 시트는 상관없음)도 _calc 끝에 둔다. _data의 기존 표 오른쪽(EL2)에
+# 두면 빌드가 tblPositions(_data 맨 오른쪽 DP2)에 계산열을 덧붙일 때 Excel이 그 행들의 오른쪽 칸을 밀어야 해서 '표에 있는 셀이
+# 이동될 수 있기 때문에 이 작업은 수행되지 않습니다'로 실패한다(2026-10-01 빌드 실측). _data 안에는 8열이 들어갈 빈틈도 없다.
+_CALC_TABLES = [("T_Class", "tblClass"), ("T_Sessions", "tblSessions"), ("T_PxMetrics", "tblPxMetrics"), ("T_FlowU", "tblFlowU"),
+                ("T_Fin", "tblFin"), ("T_Target", "tblTarget"), ("T_Est", "tblEst"), ("T_EstSnap", "tblEstSnap"),
+                ("T_CSL", "tblCSL"), ("T_MktFunds", "tblMktFunds")]
+HIDDEN_LOADS = ([(q, "_calc", f"{col_letter(2 + k * CALC_SPACING)}2", t) for k, (q, t) in enumerate(_CALC_TABLES)]
+                + [("T_PxStore", "_store", "B2", "tblPxStore")])
+EXTRA_LOADS = HIDDEN_LOADS
+
+# 버튼 전용 쿼리(spec R20): '모두 새로 고침'에서 제외(연결 속성 RefreshWithRefreshAll = False), 파일 열 때 새로 고침 없음.
+# 빌드·수동 새로 고침에서는 tblRunCtl mode = build라 KIS를 부르지 않는다. 일반 쿼리 = 기존 15개 + T_News + T_MktFunds
+BUTTON_QUERIES = frozenset(["T_Class", "T_Sessions", "T_PxStore", "T_PxMetrics", "T_FlowU", "T_Fin", "T_Target", "T_Est",
+                            "T_EstSnap", "T_CSL", "T_Events", "T_SectorKRX", "T_Company", "T_ThemeAgg"]
+                           + [q for q, _, _ in page_analysis.LOADS])
+
+# 빌드 때 새로 고침 순서(표 이름). T_Token(이관 토큰 재사용) → T_Class(분류, 로컬 파일만) → T_Universe(분류로 대회편입·섹터) →
+# 버튼 전용 저장소(build 모드: 자기 표 → Seed → 빈 표, KIS 호출 없음 — 이관 이력이 바로 보임) → 기존 일반 쿼리(T_Quote가
+# tblCSL·tblEvents를 읽으므로 저장소 다음) → 새 일반 쿼리 → 계산 쿼리(T_PxMetrics → T_Company → T_ThemeAgg) → 종목분석 표.
+# 같은 새로 고침 안에서 다른 쿼리가 적재한 표는 직전 결과로 읽히므로 읽히는 표를 먼저 새로 고친다.
+BUILD_REFRESH_ORDER = (["tblToken", "tblClass", "tblUniverse",
+                        "tblSessions", "tblPxStore", "tblFlowU", "tblFin", "tblTarget", "tblEst", "tblEstSnap", "tblCSL",
+                        "tblEvents", "tblSectorKRX"]
+                       + [t for _, _, _, t in LOADS if t not in ("tblToken", "tblUniverse")]
+                       + ["tblMktFunds", "tblNews", "tblPxMetrics", "tblCompany", "tblThemeAgg"]
+                       + [t for _, t, _ in page_analysis.LOADS])
+
+# 실행 제어 표 tblRunCtl (VBA mod_refresh가 읽고 씀). 값 열은 일반 서식(텍스트 서식이면 started가 글자로 저장됨), mode 말고는 빈칸
+RUNCTL_ROWS = [("mode", "build"), ("started", None), ("now_override", None), ("quiet", None), ("last_summary", None)]
+# 빌드 결과 계약 점검(spec §5 이름·R16~R20 버튼) — 없으면 빌드 실패(저장된 결과물을 출력 위치로 옮기지 않음)
+REQUIRED_NAMES = ["시세_최근조회", "시세_상태", "전체_최근조회", "전체_상태", "업종_최근조회", "업종_상태",
+                  "분석_최근조회", "분석_상태", "분석코드", "대회코드목록"]
+REQUIRED_BUTTONS = [(page_company.SHEET, "btn_RefreshQuick", "RefreshQuick"), (page_company.SHEET, "btn_RefreshFull", "RefreshFull"),
+                    (page_sector.SHEET, "btn_RefreshSector", "RefreshSector"), (page_analysis.SHEET, "btn_RunAnalysis", "RunAnalysis")]
+
+# 이관 토큰 시드: T_Token을 잠시 이 식(임시 정적 표 tblTokenSeed를 읽음 — 토큰 값이 M 식에 들어가지 않게)으로 바꿔 한 번
+# 새로 고친 뒤 원래 식으로 되돌린다. 그다음 T_Token은 자기 표(tblToken)의 유효 토큰을 재사용한다(남은 시간 3시간 이상).
+TOKEN_SEED_TABLE = "tblTokenSeed"
+TOKEN_SEED_FORMULA = (
+    'let\n'
+    f'    Src = Excel.CurrentWorkbook(){{[Name = "{TOKEN_SEED_TABLE}"]}}[Content],\n'
+    '    Sel = Table.SelectColumns(Src, {"env", "token", "expires", "issued", "key_sig", "status", "checked"}, MissingField.UseNull),\n'
+    '    Typed = Table.TransformColumnTypes(Sel, {{"env", type text}, {"token", type text}, {"expires", type datetime},\n'
+    '        {"issued", type datetime}, {"key_sig", type text}, {"status", type text}, {"checked", type datetime}})\n'
+    'in\n'
+    '    Typed')
+
 QUERY_DESC = {
     "T_Token": "KIS 접근토큰 캐시(자기참조). 남은 유효시간 3시간 미만일 때만 재발급",
     "T_Universe": "KOSPI·KOSDAQ 종목 마스터(인증 불필요)",
     "T_IndexNow": "국내 지수 현재가·시장폭", "T_IndexHist": "국내 지수 일별", "T_Sector": "업종 등락",
     "T_Flow": "시장별 투자자 순매수", "T_Global": "해외지수·환율·금리", "T_Rank": "순위(거래대금·등락률·수급)",
     "T_Trades": "매매 원장", "T_Holdings": "보유종목", "T_Positions": "종목별 손익(청산 포함)",
-    "T_Quote": "보유·관심 시세판", "T_PriceHist": "일봉+기술지표", "T_NAV": "일별 순자산·벤치마크",
+    "T_Quote": "보유·관심 시세판(추정가집계·신용/공매도·다음 이벤트 포함)", "T_PriceHist": "일봉+기술지표", "T_NAV": "일별 순자산·벤치마크",
     "T_Risk": "사전 위험(변동성·베타·위험기여·VaR)",
+    # 새 일반 쿼리 ([모두 새로 고침])
+    "T_News": "보유·관심 종목 뉴스·공시 제목 최근 100건", "T_MktFunds": "증시 자금(고객예탁금·신용융자·미수금·펀드·MMF) 일별",
+    # 버튼 전용 쿼리 (모두 새로 고침 제외, 빌드·수동 새로 고침은 호출 없는 build 모드)
+    "T_Class": "NICS 업종 분류(VALUESearch 파일, KIS 호출 없음) — [전체]·빌드에서 갱신",
+    "T_Sessions": "세션 달력(KOSPI 일봉 날짜)·오늘 개장 여부 — [시세]·[전체]",
+    "T_PxStore": "가격 이력 저장소(일봉, 변경분만 이어 붙임) — [시세]·[전체]",
+    "T_PxMetrics": "기간 등락·최근 20일·60일 평균·52주 고가 대비(저장소로 계산) — [시세]·[전체]",
+    "T_FlowU": "종목별 외국인·기관 순매수 1D·1W·1M — [전체]",
+    "T_Fin": "분기 실적(분기 단독값)·EPS·BPS·ROE, 주 1회 — [전체]",
+    "T_Target": "목표주가 컨센서스(증권사별 6개월) — [전체]",
+    "T_Est": "KIS 추정 EPS(FY1·FY2) — [전체]",
+    "T_EstSnap": "Fwd EPS·Fwd PER 스냅샷(영구 이력) — [전체]",
+    "T_CSL": "신용잔고율·공매도 비중·대차 변화, 주 1회 — [전체]",
+    "T_Events": "기업 이벤트 캘린더(예탁원 일정) — [전체]",
+    "T_SectorKRX": "KRX 업종지수 기간 등락·업종별 투자자 순매수 — [업종]·[전체]",
+    "T_Company": "대회종목 페이지 표 조립(KIS 호출 없음) — [시세]·[전체]",
+    "T_ThemeAgg": "테마 집계(대테마·세부테마, KIS 호출 없음) — [시세]·[전체]·[업종]",
+    "T_A_Info": "종목분석: 종목 정보·분류·현재가 — [조회]", "T_A_Investor": "종목분석: 투자자 일별 120세션 — [조회]",
+    "T_A_TradeSize": "종목분석: 체결금액별 매매비중(당일) — [조회]", "T_A_PbarToday": "종목분석: 당일 매물대 — [조회]",
+    "T_A_Profile": "종목분석: 최근 N세션 매물대 — [조회]", "T_A_Estimate": "종목분석: 외인·기관 추정가집계(당일) — [조회]",
+    "T_A_CSL": "종목분석: 신용·공매도·대차 일별 — [조회]", "T_A_Targets": "종목분석: 증권사별 목표주가 — [조회]",
+    "T_A_TargetTrend": "종목분석: 월말 목표주가 컨센서스 추이 — [조회]", "T_A_KisEst": "종목분석: KIS 추정실적 — [조회]",
+    "T_A_Fin": "종목분석: 최근 8분기 실적 — [조회]", "T_A_News": "종목분석: 뉴스·공시 40건 — [조회]",
+    "T_A_Events": "종목분석: 이 종목의 이벤트 — [조회]",
+    # 보조 함수 (연결만)
+    "fnClassify": "분류·대회편입 판정(명단 ± 수정표, NICS, 테마, 섹터 기준)", "fnPageRows": "대회종목 페이지 행(대회 종목 ∪ 보유·관심)",
+    "fnPxRunCtl": "실행 모드·시험용 시계(tblRunCtl)", "fnARun": "종목분석 쿼리 공통 실행기(모드·코드 검사·직전 표 유지)",
 }
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -302,27 +420,227 @@ F_CURDD = '=IFERROR(TAKE(tblNAV[낙폭],-1),"-")'
 
 
 # ---------------------------------------------------------------------------------------------------------------
-def col_letter(n: int) -> str:
-    s = ""
-    while n:
-        n, r = divmod(n - 1, 26)
-        s = chr(65 + r) + s
-    return s
+# 정적 표 쓰기 (대회 명단·기본 테마표·실행 제어·이관 Seed·이관 입력값)
+# ---------------------------------------------------------------------------------------------------------------
+# Excel은 COM으로 넣은 글자도 사람이 친 것처럼 해석한다("3/4" → 날짜, "-10%" → 숫자, "=…" → 수식). 이관한 글자 값이 바뀌지
+# 않게, 텍스트 서식(@)이 아닌 열에 그렇게 읽힐 글자를 넣을 때는 앞에 작은따옴표를 붙인다(셀 값은 원래 글자 그대로 저장됨).
+_RE_LOOKS_NUMERIC = re.compile(r"^\s*[+-]?(\d[\d,]*\.?\d*|\.\d+)([eE][+-]?\d+)?\s*%?\s*$")
+_RE_LOOKS_DATE = re.compile(r"^\s*\d{1,4}\s*[-/.]\s*\d{1,2}(\s*[-/.]\s*\d{1,4})?\s*$|^\s*\d{1,2}:\d{2}(:\d{2})?\s*([AaPp][Mm])?\s*$")
+_RE_LOOKS_ERROR = re.compile(r"^\s*#(N/A|NULL!|DIV/0!|VALUE!|REF!|NAME\?|NUM!|SPILL!|CALC!)\s*$", re.I)
+INT32 = 2 ** 31
+
+
+def needs_quote(s: str) -> bool:
+    """이 글자를 일반 서식 칸에 넣으면 Excel이 숫자·날짜·수식·논리값·오류로 바꿔 읽는가."""
+    t = s.strip()
+    if not t:
+        return False
+    if s[:1] in "=+-@":
+        return True
+    if t.upper() in ("TRUE", "FALSE"):
+        return True
+    return bool(_RE_LOOKS_NUMERIC.match(t) or _RE_LOOKS_DATE.match(t) or _RE_LOOKS_ERROR.match(t))
+
+
+def protect_text(rows: list, columns: list, text_cols=()) -> list:
+    """이관 행의 글자 값 보호: 텍스트 서식이 아닌 열에서 Excel이 다르게 읽을 글자는 작은따옴표를 앞에 붙인다(write_table용)."""
+    text = set(text_cols)
+    out = []
+    for r in rows:
+        out.append([("'" + v) if (isinstance(v, str) and columns[j] not in text and needs_quote(v)) else v
+                    for j, v in enumerate(r)])
+    return out
+
+
+def _date_nf(v) -> str:
+    return NF["dt"] if isinstance(v, dt.datetime) and (v.hour or v.minute or v.second) else NF["date"]
+
+
+def format_dates(lo, rows: list, columns: list, skip=()) -> None:
+    """날짜 열이 아닌 열에 날짜 값을 넣은 칸에 날짜 서식을 준다(write_table은 일련번호만 써서 숫자로 보임 — 이관한 값이
+    원본에서 날짜로 보이던 그대로 보이게). skip = 이미 날짜 서식을 거는 열."""
+    body = lo.DataBodyRange
+    if body is None:
+        return
+    for i, r in enumerate(rows):
+        for j, v in enumerate(r):
+            if isinstance(v, (dt.date, dt.datetime)) and j < len(columns) and columns[j] not in skip:
+                set_nf(body.Cells(i + 1, j + 1), _date_nf(v))
+
+
+def column_kinds(columns: list, rows: list, forced: dict | None = None) -> dict:
+    """열 형식: text(@ 서식) / date / datetime / general(숫자·빈칸) / mixed(글자와 숫자가 섞임 — 글자는 따옴표 보호).
+    종목코드·상태처럼 글자인 열은 forced로 text를 줄 수 있다."""
+    forced = forced or {}
+    kinds = {}
+    for j, c in enumerate(columns):
+        if c in forced:
+            kinds[c] = forced[c]
+            continue
+        vals = [r[j] for r in rows if j < len(r) and r[j] is not None and not (isinstance(r[j], str) and r[j] == "")]
+        if not vals:
+            kinds[c] = "general"
+        elif all(isinstance(v, str) for v in vals):
+            kinds[c] = "text"
+        elif all(isinstance(v, (dt.date, dt.datetime)) for v in vals):
+            has_time = any(isinstance(v, dt.datetime) and (v.hour or v.minute or v.second) for v in vals)
+            kinds[c] = "datetime" if has_time else "date"
+        elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals):
+            kinds[c] = "general"
+        else:
+            kinds[c] = "mixed"
+    return kinds
+
+
+def _value2(v, kind: str):
+    """Python 값 → Range.Value2에 넣을 값 (날짜는 일련번호 — pywin32의 시간대 변환을 피함)."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (dt.datetime, dt.date)):
+        return excel_serial(v)
+    if isinstance(v, int):
+        return float(v) if abs(v) >= INT32 else v      # 32비트 밖 정수는 실수로(배열 마샬링에서 VT_I8 거부 방지)
+    if isinstance(v, str):
+        if kind == "text":
+            return v
+        return ("'" + v) if needs_quote(v) else v
+    return v
+
+
+def write_static_table(ws, top: int, left: int, name: str, columns: list, rows: list, kinds: dict | None = None,
+                       style_name: str = "TableStyleLight1"):
+    """정적 표를 덩어리 쓰기(Value2 배열)로 만든다 — 13만 행 Seed도 셀 하나씩 쓰지 않는다. 빈 표는 빈 행 1개.
+
+    Args:
+        kinds: 열 형식(column_kinds 결과). 없으면 값으로 판단. text 열은 @ 서식(앞 0·영문 코드 유지).
+    Returns:
+        ListObject
+    """
+    kinds = kinds or column_kinds(columns, rows)
+    ncol = len(columns)
+    nrow = max(1, len(rows))
+    cells = ws.Cells
+    hdr = ws.Range(cells(top, left), cells(top, left + ncol - 1))
+    hdr.NumberFormat = "@"
+    hdr.Value2 = (tuple(str(c) for c in columns),)
+    for j, c in enumerate(columns):
+        col = ws.Range(cells(top + 1, left + j), cells(top + nrow, left + j))
+        if kinds.get(c) == "text":
+            col.NumberFormat = "@"
+        else:
+            set_nf(col, "General")
+    grid = [tuple(_value2(r[j] if j < len(r) else None, kinds.get(c, "general")) for j, c in enumerate(columns)) for r in rows]
+    chunk = max(1, 50000 // ncol)
+    for s in range(0, len(grid), chunk):
+        part = grid[s:s + chunk]
+        ws.Range(cells(top + 1 + s, left), cells(top + s + len(part), left + ncol - 1)).Value2 = tuple(part)
+    for j, c in enumerate(columns):
+        if kinds.get(c) in ("date", "datetime"):
+            set_nf(ws.Range(cells(top + 1, left + j), cells(top + nrow, left + j)), NF["date"] if kinds[c] == "date" else NF["dt"])
+        elif kinds.get(c) == "mixed":                    # 글자·숫자와 섞인 날짜 칸은 칸마다 날짜 서식
+            for i, r in enumerate(rows):
+                v = r[j] if j < len(r) else None
+                if isinstance(v, (dt.date, dt.datetime)):
+                    set_nf(cells(top + 1 + i, left + j), _date_nf(v))
+    lo = ws.ListObjects.Add(XL_SRC_RANGE, ws.Range(cells(top, left), cells(top + nrow, left + ncol - 1)), None, XL_YES)
+    lo.Name = name
+    lo.TableStyle = style_name
+    return lo
+
+
+def read_csv_table(path: str, text_cols=(), number_cols=()) -> tuple[list, list]:
+    """버전 관리 데이터 CSV(UTF-8, BOM 허용) → (열, 행). text_cols는 글자 그대로(종목코드 앞 0·영문 유지), number_cols는 숫자로."""
+    with open(path, encoding="utf-8-sig", newline="") as fh:
+        raw = [r for r in csv.reader(fh) if any(x.strip() for x in r)]
+    cols = [c.strip() for c in raw[0]]
+    rows = []
+    for r in raw[1:]:
+        r = (r + [""] * len(cols))[:len(cols)]
+        out = []
+        for c, v in zip(cols, r):
+            s = v.strip()
+            if s == "":
+                out.append(None)
+            elif c in number_cols:
+                f = float(s.replace(",", ""))
+                out.append(int(f) if f.is_integer() and "." not in s else f)
+            else:
+                out.append(s)
+        rows.append(out)
+    return cols, rows
+
+
+def query_add_order(texts: dict) -> list:
+    """쿼리를 넣을 순서: 보조 함수(fn*)는 서로 참조하는 순서대로(참조되는 쪽 먼저), 그다음 적재 쿼리(T_*)는 이름순.
+    참조는 주석을 뺀 M 코드에 다른 쿼리 이름이 낱말로 나오는지로 본다(순환이 있으면 남은 것은 이름순)."""
+    def code(t: str) -> str:
+        t = re.sub(r"/\*.*?\*/", " ", t, flags=re.S)
+        return re.sub(r"//[^\n]*", " ", t)
+    fns = sorted(n for n in texts if not n.startswith("T_"))
+    deps = {n: {m for m in fns if m != n and re.search(r"(?<![\w#])" + re.escape(m) + r"(?!\w)", code(texts[n]))} for n in fns}
+    order, done = [], set()
+    while len(order) < len(fns):
+        ready = [n for n in fns if n not in done and deps[n] <= done]
+        if not ready:                                  # 순환(있으면) — 남은 것은 이름순
+            ready = [n for n in fns if n not in done]
+        for n in ready:
+            order.append(n)
+            done.add(n)
+    return order + sorted(n for n in texts if n.startswith("T_"))
+
+
+def key_sig_from_cfg(cfg_path: str) -> str | None:
+    """T_Token.pq의 KeySig와 같은 앱키 체크섬(앱키 자체는 어디에도 쓰지 않음). 설정을 못 읽으면 None."""
+    try:
+        import yaml
+        with open(cfg_path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        app = str(cfg.get("my_app") or "").strip()
+        return str(sum(ord(ch) for ch in app) * 7 + len(app))
+    except Exception:  # noqa: BLE001 — 체크섬 비교는 경고용(실패해도 이관 토큰의 체크섬을 그대로 씀)
+        return None
 
 
 class Builder:
-    def __init__(self, out_path: str, cfg_path: str, sample: bool, visible: bool, seed_token: str | None = None):
-        self.out = os.path.abspath(out_path)
+    """통합문서 하나를 만든다. 이관 계획(plan)·이관 토큰(token)은 main이 파일 파싱으로 읽어 넘긴다(Excel로 원본을 열지 않음).
+
+    Args:
+        out_path: 최종 출력(.xlsm). 메시지용 — Excel은 work_path에 저장한다.
+        work_path: 빌드 중 저장 경로(출력 폴더의 .build_tmp\\ 아래 같은 파일 이름). None이면 out_path.
+        plan: migrate.MigrationPlan 또는 None(이관 없음 — 샘플/빈 입력표).
+        token: 이관할 migrate.TokenRecord(값은 메모리에서만 씀) 또는 None.
+        est_snap: 이관 없이 만들 때 이력 CSV에서 복원한 tblEstSnap(migrate.TableData) 또는 None.
+        vbom_lock: AccessVBOM 잠금 파일(개발 중 병렬 작업 상호 배제). 평소 None.
+        log: 로그 줄을 모을 목록(main과 공유).
+    """
+
+    def __init__(self, out_path: str, cfg_path: str, sample: bool, visible: bool, seed_token: str | None = None, *,
+                 work_path: str | None = None, plan=None, token=None, est_snap=None, vbom_lock: str | None = None,
+                 log: list | None = None, cfg_explicit: bool = False):
+        self.final_out = os.path.abspath(out_path)
+        self.out = os.path.abspath(work_path or out_path)
         self.cfg_path = cfg_path
+        self.cfg_explicit = cfg_explicit
         self.sample = sample
-        self.xl = new_excel(visible)
-        self.pid = excel_pid(self.xl)
+        self.visible = visible
         self.seed_token = seed_token
+        self.plan = plan
+        self.token = token
+        self.est_snap = est_snap
+        self.vbom_lock = vbom_lock
+        self.xl = None
+        self.pid = None
         self.temp_rows = []   # 빈 PQ 표에 임시로 넣은 행 (계산열·서식 정의용, 저장 직전 삭제)
         self.wb = None
         self.ws = {}
         self.lo = {}
-        self.log = []
+        self.query_of = {}    # 표 이름 → 쿼리 이름 (적재한 표 전부)
+        self.seeds = {}       # Seed 표 이름 → (자기 표 이름, 넣은 행 수)
+        self.settings_info = {}
+        self.vbom_message = ""
+        self.log = log if log is not None else []
 
     # -------------------------------------------------------------------------------------------------------
     def say(self, msg):
@@ -330,50 +648,74 @@ class Builder:
         self.log.append(msg)
 
     def run(self, resume: str | None = None, checkpoint: str | None = None):
-        try:
-            if resume:
-                self.open_checkpoint(resume)
-            else:
-                self.create_workbook()
-                self.build_inputs()
-                self.add_queries()
-                self.load_all()
-                self.refresh_all()      # 표의 열 구조는 첫 새로 고침 후에 생기므로 수식보다 먼저 실행
-                if checkpoint:
-                    self.wb.SaveCopyAs(os.path.abspath(checkpoint))
-                    self.say(f"체크포인트 저장: {checkpoint}")
-            self.ensure_rows()
-            self.set_input_formulas()
-            self.add_names()
-            self.add_calc_columns()
-            self.add_names_post()
-            self.format_data_tables()
-            self.build_dashboard()
-            self.build_market()
-            self.build_portfolio()
-            self.build_risk()
-            self.build_performance()
-            self.build_quote_board()
-            self.build_trade_sheets()
-            self.build_universe_sheet()
-            self.build_settings_sheet()
-            self.build_guide()
-            self.finish()
-        finally:
+        """Excel 시작~종료 전체를 access_vbom으로 감싼다(Excel은 AccessVBOM을 인스턴스 시작 때 읽음 — T4 실측).
+        레지스트리는 성공·실패와 관계없이 원래 상태로 되돌리고 그 결과를 로그에 남긴다."""
+        t0 = time.time()
+        with access_vbom(log=self.say, lock_path=self.vbom_lock, owner="build_dashboard") as vbom:
+            self.xl = new_excel(self.visible)
+            self.pid = excel_pid(self.xl)
             try:
-                if self.wb is not None:
-                    self.wb.Close(False)
-            except Exception:
-                pass
-            self.wb, self.ws, self.lo = None, {}, {}
-            quit_excel(self.xl, self.pid)
+                if resume:
+                    self.open_checkpoint(resume)
+                else:
+                    self.create_workbook()
+                    self.build_inputs()
+                    self.build_static_tables()
+                    self.add_queries()
+                    self.load_all()
+                    self.seed_tokens()
+                    self.refresh_all()      # 표의 열 구조는 첫 새로 고침 후에 생기므로 수식보다 먼저 실행
+                    self.settle_seeds()
+                    self.exclude_button_queries()
+                    if checkpoint:
+                        self.wb.SaveCopyAs(os.path.abspath(checkpoint))
+                        self.say(f"체크포인트 저장: {checkpoint}")
+                self.ensure_rows()
+                self.set_input_formulas()
+                self.add_names()
+                self.add_calc_columns()
+                self.add_names_post()
+                self.format_data_tables()
+                self.build_dashboard()
+                self.build_market()
+                self.build_portfolio()
+                self.build_risk()
+                self.build_performance()
+                self.build_quote_board()
+                self.build_trade_sheets()
+                self.build_universe_sheet()
+                self.build_settings_sheet()
+                self.build_guide()
+                self.build_pages()
+                self.add_vba()
+                self.check_contract()
+                self.report_counts()
+                self.finish()
+            finally:
+                try:
+                    if self.wb is not None:
+                        self.wb.Close(False)
+                except Exception:
+                    pass
+                self.wb, self.ws, self.lo = None, {}, {}
+                quit_excel(self.xl, self.pid)
+                self.xl = None
+        self.vbom_message = vbom.message
+        self.say(f"Excel 작업 시간 {time.time() - t0:.0f}s")
 
     # -------------------------------------------------------------------------------------------------------
     def create_workbook(self):
+        os.makedirs(os.path.dirname(self.out), exist_ok=True)
         if os.path.exists(self.out):
-            os.remove(self.out)
+            if os.path.normcase(self.out) == os.path.normcase(self.final_out):
+                raise RuntimeError(f"작업 경로가 출력 통합문서와 같습니다(지우지 않음): {self.out}")
+            os.remove(self.out)     # 직전에 실패한 빌드가 남긴 작업 파일(빌더 소유 — 사용자 통합문서가 아님)
         wb = self.xl.Workbooks.Add()
         self.wb = wb
+        try:
+            wb.EnableAutoRecover = False   # 빌드 중 자동 복구 사본(토큰 표 포함)이 남지 않게 — 저장 직전에 다시 켬
+        except Exception:  # noqa: BLE001
+            pass
         # 팔레트: Color10=상승(빨강), Color11=하락(파랑)  → 숫자서식 [Color10]/[Color11]
         set_palette(wb, 10, C["up"])
         set_palette(wb, 11, C["down"])
@@ -387,13 +729,13 @@ class Builder:
         for i, name in enumerate(SHEETS):
             wb.Worksheets(i + 1).Name = name
             self.ws[name] = wb.Worksheets(i + 1)
-        # 먼저 저장해 두어야 차트의 이름 참조가 최종 파일명을 가리킴
-        wb.SaveAs(self.out, 51)
-        self.say(f"통합문서 생성: {self.out}")
+        # 먼저 최종 파일 이름(.xlsm)으로 저장해 두어야 차트의 이름 참조가 최종 파일명을 가리킴(작업 폴더만 다름)
+        save_xlsm(wb, self.out)
+        self.say(f"통합문서 생성: {self.final_out} (작업 위치 {self.out})")
 
     def open_checkpoint(self, path: str):
-        """개발용: 새로 고침까지 끝난 체크포인트 파일을 열어 이후 단계만 다시 실행."""
-        import shutil
+        """개발용: 새로 고침까지 끝난 체크포인트 파일을 열어 이후 단계만 다시 실행(이관·Seed 단계는 건너뜀)."""
+        os.makedirs(os.path.dirname(self.out), exist_ok=True)
         shutil.copyfile(path, self.out)
         self.wb = self.xl.Workbooks.Open(self.out)
         self.table_style = "PM Navy" if ensure_table_style(self.wb) is not None else "TableStyleLight9"
@@ -401,19 +743,57 @@ class Builder:
             self.ws[ws.Name] = ws
             for lo in ws.ListObjects:
                 self.lo[lo.Name] = lo
+                # 쿼리 표의 SourceType: 만들 때 0(xlSrcExternal), 저장 뒤 다시 열면 3(xlSrcQuery)
+                m = re.search(r"\[(T_[^\]]+)\]", str(lo.QueryTable.CommandText)) if lo.SourceType in (0, 3) else None
+                if m:
+                    self.query_of[lo.Name] = m.group(1)
         self.say(f"체크포인트 열기: {path} (표 {len(self.lo)}개)")
 
     # -------------------------------------------------------------------------------------------------------
+    def merged_settings(self) -> list[tuple]:
+        """설정 표 행 (키, 항목, 값, 설명). 이관 원본이 있으면 기존 키는 사용자 값을 유지하고 새 키는 기본값을 더한다(spec R22).
+        순서는 빌더 순서(숫자 서식·검증 목록이 키로 찾음), 원본에만 있는 키는 뒤에 그대로 붙인다(사용자 데이터 보존).
+        cfg_path는 --cfg를 직접 준 경우에만 그 값으로 바꾼다."""
+        base = settings_rows(self.cfg_path, self.sample)
+        base_keys = [k for k, *_ in base]
+        if self.plan is None:
+            self.settings_info = {"source": 0, "kept": [], "added": base_keys, "extra": []}
+            return base
+        src = {k: (label, v, desc) for k, label, v, desc in self.plan.settings}
+        out, kept, added = [], [], []
+        for k, label, v, desc in base:
+            if k in src:
+                val = src[k][1]
+                if k == "cfg_path" and self.cfg_explicit and val != self.cfg_path:
+                    self.say(f"설정 cfg_path: --cfg로 준 경로를 씀(이관 값 대신): {self.cfg_path}")
+                    val = self.cfg_path
+                out.append((k, label, val, desc))
+                kept.append(k)
+            else:
+                out.append((k, label, v, desc))
+                added.append(k)
+        extra = [(k, label, v, desc) for k, label, v, desc in self.plan.settings if k not in base_keys]
+        out.extend(extra)
+        self.settings_info = {"source": self.plan.settings_count, "kept": kept, "added": added, "extra": [k for k, *_ in extra]}
+        return out
+
+    def _migrated(self, name: str):
+        """이관 계획의 입력표 행(원본에 그 표가 있었으면 0행이어도 목록), 원본에 없었으면 None(기본값 사용)."""
+        if self.plan is None or name not in self.plan.tables:
+            return None
+        return self.plan.tables[name].rows
+
     def build_inputs(self):
         ws = self.ws["설정"]
         sheet_setup(ws, bg=False, zoom=90, tab="#6B7785",
                     widths={"A": 2, "B": 15, "C": 20, "D": 44, "E": 58, "F": 3, "G": 10, "H": 16, "I": 12, "J": 10,
                             "K": 10, "L": 44, "M": 3, "N": 8, "O": 16, "P": 9, "Q": 11, "R": 7, "S": 3, "T": 12, "U": 20})
-        lo = write_table(ws, 6, 2, ["키", "항목", "값", "설명"], settings_rows(self.cfg_path, self.sample), "tblSettings",
+        srows = self.merged_settings()
+        lo = write_table(ws, 6, 2, ["키", "항목", "값", "설명"], protect_text(srows, ["키", "항목", "값", "설명"]), "tblSettings",
                          style_name=self.table_style)
         self.lo["tblSettings"] = lo
-        rows = settings_rows(self.cfg_path, self.sample)
-        for i, (k, _, v, _) in enumerate(rows):
+        format_dates(lo, srows, ["키", "항목", "값", "설명"])
+        for i, (k, _, v, _) in enumerate(srows):
             c = lo.DataBodyRange.Cells(i + 1, 3)
             if k in ("start_date", "end_date"):
                 set_nf(c, NF["date"])
@@ -429,46 +809,68 @@ class Builder:
         style(lo.ListColumns("키").DataBodyRange, color=C["muted"], size=8)
         fill(lo.ListColumns("값").DataBodyRange, "input")
         style(lo.ListColumns("설명").DataBodyRange, color=C["muted"], size=9)
-        validation_list(lo.DataBodyRange.Cells(5, 3), "KOSPI,KOSDAQ,혼합")
-        validation_list(lo.DataBodyRange.Cells(18, 3), "전체,코스피,코스닥")
-        validation_list(lo.DataBodyRange.Cells(19, 3), "Y,N")
+        keys = [k for k, *_ in srows]
+        for key, choices in (("benchmark", "KOSPI,KOSDAQ,혼합"), ("rank_market", "전체,코스피,코스닥"), ("stock_flow", "Y,N")):
+            if key in keys:
+                validation_list(lo.DataBodyRange.Cells(keys.index(key) + 1, 3), choices)
 
-        watch = SAMPLE_WATCH if self.sample else []
-        wrows = [[c, None, g, a, t, p] for (c, g, a, t, p) in watch]
+        mig = self._migrated("tblWatch")
+        if mig is not None:
+            wrows = protect_text([[c, None, g, a, t, p] for (c, g, a, t, p) in mig],
+                                 ["종목코드", "종목명", "그룹", "관심가", "목표가", "투자포인트"], ("종목코드",))
+        else:
+            wrows = [[c, None, g, a, t, p] for (c, g, a, t, p) in (SAMPLE_WATCH if self.sample else [])]
         lo = write_table(ws, 6, 7, ["종목코드", "종목명", "그룹", "관심가", "목표가", "투자포인트"], wrows, "tblWatch",
                          text_cols=("종목코드",), style_name=self.table_style)
+        format_dates(lo, wrows, ["종목코드", "종목명", "그룹", "관심가", "목표가", "투자포인트"])
         for c in ("관심가", "목표가"):
             set_nf(lo.ListColumns(c).DataBodyRange, NF["krw"])
         fill(lo.ListColumns("종목코드").DataBodyRange, "input")
         self.lo["tblWatch"] = lo
 
-        lo = write_table(ws, 6, 14, ["구분", "이름", "시장코드", "심볼", "순서"], MACRO_ROWS, "tblMacro",
+        mig = self._migrated("tblMacro")
+        mrows = protect_text(mig, ["구분", "이름", "시장코드", "심볼", "순서"]) if mig is not None else MACRO_ROWS
+        lo = write_table(ws, 6, 14, ["구분", "이름", "시장코드", "심볼", "순서"], mrows, "tblMacro",
                          style_name=self.table_style)
+        format_dates(lo, mrows, ["구분", "이름", "시장코드", "심볼", "순서"])
         self.lo["tblMacro"] = lo
-        lo = write_table(ws, 6, 20, ["휴장일", "설명"], HOLIDAYS, "tblHolidays", date_cols=("휴장일",),
+        mig = self._migrated("tblHolidays")
+        hrows = protect_text(mig, ["휴장일", "설명"]) if mig is not None else HOLIDAYS
+        lo = write_table(ws, 6, 20, ["휴장일", "설명"], hrows, "tblHolidays", date_cols=("휴장일",),
                          style_name=self.table_style)
+        format_dates(lo, hrows, ["휴장일", "설명"], skip=("휴장일",))
         self.lo["tblHolidays"] = lo
 
-        # ⑤ 수정표 tblOverride(spec R4): 빈 표(머리글 + 빈 행 1개, 종목코드는 텍스트), ④ 오른쪽의 빈 열 묶음 W:AD.
-        # 제목·사용법·경고 칸은 build_settings_sheet, 기존 통합문서의 수정표 이관은 T23
+        # ⑤ 수정표 tblOverride(spec R4): ④ 오른쪽의 빈 열 묶음 W:AD(종목코드는 텍스트). 이관 원본의 행을 그대로 옮기고(R22),
+        # 없으면 빈 표(머리글 + 빈 행 1개). 제목·사용법·경고 칸은 build_settings_sheet
         anchor = ws.Range(OVERRIDE_ANCHOR)
         ws.Columns(anchor.Column - 1).ColumnWidth = 3
         for j, w in enumerate(OVERRIDE_WIDTHS):
             ws.Columns(anchor.Column + j).ColumnWidth = w
-        lo = write_table(ws, anchor.Row, anchor.Column, OVERRIDE_HEADERS, [], "tblOverride", text_cols=("종목코드",),
+        mig = self._migrated("tblOverride")
+        orows = protect_text(mig, OVERRIDE_HEADERS, ("종목코드",)) if mig else []
+        lo = write_table(ws, anchor.Row, anchor.Column, OVERRIDE_HEADERS, orows, "tblOverride", text_cols=("종목코드",),
                          style_name=self.table_style)
+        format_dates(lo, orows, OVERRIDE_HEADERS)
         fill(lo.DataBodyRange, "input")
         validation_list(lo.ListColumns("대회편입").DataBodyRange, "추가,제외")
         self.lo["tblOverride"] = lo
 
-        # 매매일지
+        # 매매일지 — 이관 원본이 있으면 입력 열만 옮긴다(종목명·금액·확인은 set_input_formulas가 수식으로 다시 넣음)
         ws = self.ws["매매일지"]
         sheet_setup(ws, bg=False, zoom=90, tab="#E8890C",
                     widths={"A": 2, "B": 11, "C": 9, "D": 16, "E": 6, "F": 8, "G": 11, "H": 13, "I": 9, "J": 9,
                             "K": 8, "L": 36, "M": 11, "N": 11, "O": 18, "P": 22})
-        trades = sample_trades() if self.sample else []
+        mig = self._migrated("tblTrades")
+        if mig is not None:
+            src_cols = migrate.INPUT_TABLES["tblTrades"]
+            trades = [[r[src_cols.index(h)] if h in src_cols else None for h in TRADE_HEADERS] for r in mig]
+            trades = protect_text(trades, TRADE_HEADERS, ("종목코드",))
+        else:
+            trades = sample_trades() if self.sample else []
         lo = write_table(ws, 11, 2, TRADE_HEADERS, trades, "tblTrades", text_cols=("종목코드",), date_cols=("일자",),
                          style_name=self.table_style)
+        format_dates(lo, trades, TRADE_HEADERS, skip=("일자",))
         for c in ("수량",):
             set_nf(lo.ListColumns(c).DataBodyRange, NF["num0"])
         for c in ("단가", "금액", "수수료", "세금", "목표가", "손절가"):
@@ -482,24 +884,106 @@ class Builder:
         self.say("입력표 생성 완료 (설정·관심종목·해외지표·휴장일·수정표·매매일지)")
 
     # -------------------------------------------------------------------------------------------------------
+    def build_static_tables(self):
+        """숨김 시트 _seed의 정적 표(Power Query가 아니라 빌더가 쓰는 표 — spec §5: 상태·조회시각 열 없음).
+
+        tblRunCtl(실행 제어 키/값, mode = build) · tblContest(대회 명단, data CSV) · tblThemeBase(기본 테마표, data CSV) ·
+        Seed 표(이관한 저장소 이력 — 자기참조 쿼리가 자기 표가 비었을 때 읽음). 표마다 열 1칸 띄워 2행에 나란히 둔다.
+        Seed: tblSessionsSeed·tblPxStoreSeed·tblEstSnapSeed·tblCSLSeed·tblFinSeed는 늘(원본에 없으면 빈 표),
+        tblFlowUSeed·tblTargetSeed·tblEstSeed·tblEventsSeed·tblSectorKRXSeed는 원본에 행이 있을 때만 만든다.
+        """
+        ws = self.ws["_seed"]
+        specs = [("tblRunCtl", ["키", "값"], [list(r) for r in RUNCTL_ROWS], {"키": "text", "값": "general"})]
+        cols, rows = read_csv_table(CONTEST_CSV, number_cols=("시가총액_0930_억", "평균거래대금_5일_억", "거래일수", "상장주식수"))
+        specs.append(("tblContest", cols, rows, column_kinds(cols, rows, {"종목코드": "text", "종목명": "text", "시장": "text",
+                                                                          "비고": "text"})))
+        cols, rows = read_csv_table(THEMES_CSV)
+        specs.append(("tblThemeBase", cols, rows, {c: "text" for c in cols}))
+        for name in migrate.STORE_TABLES:
+            t = self.plan.tables.get(name) if self.plan is not None else None
+            if t is None and name == "tblEstSnap" and self.est_snap is not None:
+                t = self.est_snap               # 이관 없이 만들 때 이력 CSV에서 복원한 스냅샷
+            if name in migrate.OPTIONAL_SEEDS and (t is None or not t.rows):
+                continue
+            columns = list(t.columns) if t is not None else list(migrate.STORE_COLUMNS[name])
+            data = list(t.rows) if t is not None else []
+            forced = {c: "text" for c in ("종목코드", "상태") if c in columns}
+            specs.append((name + "Seed", columns, data, column_kinds(columns, data, forced)))
+            self.seeds[name + "Seed"] = (name, len(data), t.origin if t is not None else "")
+        col = 2
+        for name, columns, data, kinds in specs:
+            self.lo[name] = write_static_table(ws, 2, col, name, columns, data, kinds)
+            col += len(columns) + 1
+        seeded = [f"{n}={c}행" for n, (_, c, _) in self.seeds.items() if c]
+        self.say(f"정적 표 생성: tblRunCtl(mode=build) · tblContest {len(specs[1][2])}행 · tblThemeBase {len(specs[2][2])}행 · "
+                 f"Seed {len(self.seeds)}개" + (f" (이관: {', '.join(seeded)})" if seeded else " (모두 빈 표)"))
+
     def add_queries(self):
-        files = sorted(glob.glob(os.path.join(PQ_DIR, "*.pq")))
-        for f in files:
-            name = os.path.splitext(os.path.basename(f))[0]
+        """powerquery/*.pq를 통합문서 쿼리로 넣는다. 보조 함수(fn*)를 의존 순서대로 먼저, 적재 쿼리(T_*)를 나중에 넣는다
+        (아직 없는 함수를 참조하는 쿼리를 먼저 넣으면 함수가 들어올 때마다 참조 쿼리를 다시 검사해 느려짐)."""
+        t0 = time.time()
+        texts = {}
+        for f in glob.glob(os.path.join(PQ_DIR, "*.pq")):
             with open(f, encoding="utf-8") as fh:
-                add_query(self.wb, name, fh.read(), QUERY_DESC.get(name, ""))
-        self.say(f"Power Query {len(files)}개 추가")
+                texts[os.path.splitext(os.path.basename(f))[0]] = fh.read()
+        for name in query_add_order(texts):
+            add_query(self.wb, name, texts[name], QUERY_DESC.get(name, ""))
+        self.say(f"Power Query {len(texts)}개 추가 ({time.time() - t0:.0f}s)")
 
     def load_all(self):
-        for q, sheet, cell, tname in LOADS:
+        """쿼리를 표로 적재: 기존 15개 + 새 일반·숨김 표(EXTRA_LOADS) + 페이지 모듈 표(각 모듈의 시트·셀).
+        페이지 표는 첫 새로 고침 전에 새로 고침 방식을 덮어쓰기(RefreshStyle 0)로 바꾼다 — 기본값(셀 삽입·삭제)에서는
+        0행 새로 고침이 셀을 지워 같은 열 아래의 표를 끌어올린다(페이지 작업 실측). 이 값은 이후 되돌리지 않는다."""
+        for q, sheet, cell, tname in LOADS + EXTRA_LOADS:
             st = "TableStyleLight1" if sheet.startswith("_") else self.table_style
-            lo = load_query(self.ws[sheet], q, cell, tname, background=True, style_name=st)
-            self.lo[tname] = lo
-        # 토큰 쿼리: 파일 열 때 + 30분마다 자동 확인(유효하면 재사용, 알림톡 없음)
+            self.lo[tname] = load_query(self.ws[sheet], q, cell, tname, background=True, style_name=st)
+            self.query_of[tname] = q
+        for mod in PAGE_MODULES:
+            for q, tname, cell in mod.LOADS:
+                self.lo[tname] = load_query(self.ws[mod.SHEET], q, cell, tname, background=True, style_name=self.table_style)
+                self.query_of[tname] = q
+        for mod in PAGE_MODULES:
+            if hasattr(mod, "prepare_tables"):
+                mod.prepare_tables(self)
+        for _, tname, _ in page_news_events.LOADS:       # 이 모듈은 prepare_tables가 없어 같은 설정을 여기서
+            self.lo[tname].QueryTable.RefreshStyle = 0    # xlOverwriteCells
+        self.say(f"쿼리 → 표 로드 설정 완료 (표 {len(self.query_of)}개: 기존 {len(LOADS)} · 새 숨김/일반 {len(EXTRA_LOADS)} · "
+                 f"페이지 {sum(len(m.LOADS) for m in PAGE_MODULES)})")
+
+    def seed_tokens(self):
+        """이관 토큰을 새 통합문서의 tblToken에 넣는다(T_Token 첫 새로 고침 전 — 그래야 재사용, 새 발급·알림톡 없음).
+        T_Token 식을 잠시 임시 정적 표를 읽는 식으로 바꿔 한 번 새로 고친 뒤 원래 식으로 되돌리고 임시 표를 지운다.
+        토큰 값은 메모리 → 임시 표 칸 → tblToken 칸으로만 가고, 로그에는 남은 분만 쓴다. 넣지 못하면 빌드를 멈춘다."""
+        if self.seed_token:
+            self.seed_token_cache()                     # 개발용 옛 경로(JSON) — 쓰지 않는 것을 권장(handoff 게이트 3)
+        elif self.token is None:
+            self.say("⚠ 이관할 토큰 캐시 없음 — 첫 새로 고침에서 T_Token이 새 토큰을 발급합니다(KIS 알림톡 1건)")
+        else:
+            tok = self.token
+            cfg_sig = key_sig_from_cfg(self.cfg_path)
+            sig = tok.key_sig or cfg_sig
+            if tok.key_sig and cfg_sig and tok.key_sig != cfg_sig:
+                self.say("⚠ 이관 토큰의 앱키 체크섬이 현재 kis_devlp.yaml과 다릅니다 — T_Token이 새 토큰을 발급할 수 있습니다")
+            now = dt.datetime.now().replace(microsecond=0)
+            row = ["prod", tok.token, tok.expires, tok.issued, sig, "이관(원본 파일 파싱)", now]
+            kinds = {"env": "text", "token": "text", "expires": "datetime", "issued": "datetime", "key_sig": "text",
+                     "status": "text", "checked": "datetime"}
+            lo_seed = write_static_table(self.ws["_sys"], 2, 12, TOKEN_SEED_TABLE, migrate.TOKEN_COLUMNS, [row], kinds)
+            q = self.wb.Queries("T_Token")
+            original = q.Formula
+            try:
+                q.Formula = TOKEN_SEED_FORMULA
+                ok, msg, n = refresh(self.lo["tblToken"], "T_Token(이관 토큰 넣기)")
+            finally:
+                q.Formula = original
+                lo_seed.Delete()                         # 표와 칸 내용을 함께 지움
+            if not ok or n != 1:
+                raise RuntimeError(f"토큰 캐시 이관 실패({msg}) — T_Token이 새 토큰을 발급하지 않도록 빌드를 멈춥니다")
+            self.say(f"  ✓ 토큰 캐시 이관: 남은 {tok.minutes_left()}분 (토큰 값은 표시하지 않음)")
+        # 토큰 쿼리: 파일 열 때 + 30분마다 자동 확인(유효하면 재사용, 알림톡 없음) — 시드 뒤에 켠다
         qt = self.lo["tblToken"].QueryTable
         qt.RefreshOnFileOpen = True
         qt.RefreshPeriod = 30
-        self.say("쿼리 → 표 로드 설정 완료")
 
     def ensure_rows(self):
         """0행인 PQ 표는 계산열 수식·숫자서식을 넣을 본문이 없으므로 임시 행을 추가 (finish에서 삭제).
@@ -548,17 +1032,50 @@ class Builder:
         q.Formula = original
         self.say(("  ✓ " if ok else "  ✗ ") + "토큰 캐시 시드" + ("" if ok else f" 실패: {msg}"))
 
+    def _key_value(self, table: str, key: str):
+        lo = self.lo[table]
+        body = lo.DataBodyRange
+        if body is None:
+            return None
+        kc, vc = lo.ListColumns("키").Index, lo.ListColumns("값").Index
+        for r in range(1, body.Rows.Count + 1):
+            k = body.Cells(r, kc).Value
+            if k is not None and str(k).strip() == key:
+                return body.Cells(r, vc).Value
+        return None
+
+    def _token_status(self) -> str:
+        lo = self.lo["tblToken"]
+        try:
+            v = lo.ListColumns("status").DataBodyRange.Cells(1, 1).Value
+            return "" if v is None else str(v)
+        except Exception:  # noqa: BLE001 — 상태 확인은 로그용
+            return "(확인 못 함)"
+
     def refresh_all(self):
-        self.say("데이터 새로 고침 (KIS API 호출)…")
+        """빌드 중 한 번 새로 고침(BUILD_REFRESH_ORDER). 일반 쿼리는 KIS를 조회하고, 버튼 전용 쿼리는 tblRunCtl mode = build라
+        호출 없이 자기 표 → Seed → 빈 표를 돌려줘 열 구조가 생긴다(이관 이력은 이때 바로 표에 보임)."""
+        mode = self._key_value("tblRunCtl", "mode")
+        if str(mode or "").strip().lower() != "build":
+            raise RuntimeError(f"tblRunCtl mode가 build가 아닙니다({mode!r}) — 버튼 전용 쿼리가 KIS를 부르지 않게 멈춥니다")
+        self.say("데이터 새로 고침 — 일반 쿼리는 KIS 조회, 버튼 전용 쿼리는 build 모드(KIS 호출 없음)…")
         t0 = time.time()
-        if self.seed_token:
-            self.seed_token_cache()
+        missing = [t for t in BUILD_REFRESH_ORDER if t not in self.query_of]
+        if missing:
+            self.say("⚠ 새로 고침 순서에 있는데 적재되지 않은 표: " + ", ".join(missing))
+        order = [t for t in BUILD_REFRESH_ORDER if t in self.query_of] + [t for t in self.query_of if t not in BUILD_REFRESH_ORDER]
         failed = []
-        for q, sheet, cell, tname in LOADS:
-            ok, msg, n = refresh(self.lo[tname], q)
+        for tname in order:
+            q = self.query_of[tname]
+            ok, msg, n = refresh(self.lo[tname], q + (" [build]" if q in BUTTON_QUERIES else ""))
             self.say(("  ✓ " if ok else "  ✗ ") + msg)
             if not ok:
                 failed.append((q, tname))
+            if tname == "tblToken":
+                st = self._token_status()
+                self.say(f"    토큰 상태: {st}")
+                if self.token is not None and st.startswith("신규"):
+                    self.say("⚠ 이관 토큰을 재사용하지 못하고 새로 발급됨(알림톡) — 원본 토큰·앱키 확인")
         for attempt in range(2):          # 일시 오류(호출 제한 등) 대비 재시도
             if not failed:
                 break
@@ -573,6 +1090,61 @@ class Builder:
             raise RuntimeError("새로 고침 실패: " + ", ".join(q for q, _ in failed) +
                                " — kis_devlp.yaml(my_app/my_sec/prod)과 네트워크를 확인하세요.")
         self.say(f"새로 고침 완료 ({time.time() - t0:.0f}s)")
+
+    def _empty_static(self, lo):
+        """정적 표를 머리글 + 빈 행 1개로 줄인다(아래 칸은 지움). 같은 행의 다른 표에는 손대지 않는다."""
+        ws = lo.Range.Worksheet
+        top, left = lo.HeaderRowRange.Row, lo.HeaderRowRange.Column
+        ncol, n = lo.ListColumns.Count, lo.ListRows.Count
+        if n > 1:
+            lo.Resize(ws.Range(ws.Cells(top, left), ws.Cells(top + 1, left + ncol - 1)))
+            ws.Range(ws.Cells(top + 2, left), ws.Cells(top + n, left + ncol - 1)).Clear()
+        if lo.DataBodyRange is not None:
+            lo.DataBodyRange.ClearContents()
+
+    def settle_seeds(self):
+        """Seed로 넣은 이관 이력이 build 모드 새로 고침으로 자기 표에 옮겨졌으면 Seed를 비운다(같은 이력을 두 벌 들고 있지 않게 —
+        가격 저장소는 한 벌에 약 9MB). 자기 표가 비었거나 오류 1행뿐이면 Seed를 그대로 두고 경고한다(다음 새로 고침에서 다시 읽음).
+        이관한 행은 백업 폴더의 원본에도 남아 있다."""
+        for seed, (own, n_seed, _origin) in self.seeds.items():
+            if not n_seed:
+                continue
+            lo_own = self.lo.get(own)
+            n_own = 0 if lo_own is None or lo_own.DataBodyRange is None else int(lo_own.ListRows.Count)
+            only_error = False
+            if n_own == 1:
+                try:
+                    st = lo_own.ListColumns("상태").DataBodyRange.Cells(1, 1).Value
+                    only_error = isinstance(st, str) and st.startswith(("오류", "이전"))
+                except Exception:  # noqa: BLE001
+                    pass
+            if n_own > 0 and not only_error:
+                self._empty_static(self.lo[seed])
+                self.say(f"  Seed 정리: {seed} {n_seed}행 → {own} {n_own}행으로 옮겨져 Seed를 비움")
+            else:
+                self.say(f"⚠ {own}이(가) 비어 있어 {seed}({n_seed}행)를 그대로 둡니다 — 버튼 실행 때 다시 읽습니다")
+
+    def exclude_button_queries(self):
+        """버튼 전용 쿼리를 '모두 새로 고침'에서 뺀다(spec R20: 연결 속성 '모두 새로 고침 시 이 연결 새로 고침' 해제)·파일 열 때
+        새로 고침 없음. 일반 쿼리(기존 + T_News + T_MktFunds)는 포함 그대로. T_Token의 파일 열 때·30분 확인은 유지."""
+        n_ex, n_in = 0, 0
+        for tname, q in self.query_of.items():
+            qt = self.lo[tname].QueryTable
+            conn = qt.WorkbookConnection
+            if q in BUTTON_QUERIES:
+                conn.RefreshWithRefreshAll = False
+                qt.RefreshOnFileOpen = False
+                try:
+                    conn.OLEDBConnection.RefreshOnFileOpen = False
+                except Exception:  # noqa: BLE001 — QueryTable 쪽 설정과 같은 값(연결 종류에 따라 없을 수 있음)
+                    pass
+                n_ex += 1
+            else:
+                conn.RefreshWithRefreshAll = True
+                if q != "T_Token":
+                    qt.RefreshOnFileOpen = False
+                n_in += 1
+        self.say(f"모두 새로 고침: 일반 쿼리 {n_in}개 포함 · 버튼 전용 {n_ex}개 제외 (파일 열 때 새로 고침은 T_Token만)")
 
     # -------------------------------------------------------------------------------------------------------
     def add_calc_columns(self):
@@ -697,26 +1269,34 @@ class Builder:
                     set_col_format(lo, c, nf=nf)
                 except Exception:
                     pass
-        # 숨김 시트
-        for s in ("_data", "_sys"):
+        # 숨김 시트 (B1 = 안내 한 줄, 표는 2행부터)
+        notes = {
+            "_data": ("※ Power Query 원본 데이터 (수정하지 마세요)", C["muted"]),
+            "_sys": ("※ KIS 접근토큰 캐시 — 통합문서를 외부에 공유할 때는 이 표의 내용을 지우세요(24시간 유효)", C["up"]),
+            "_calc": ("※ 버튼 전용 데이터(분류·세션 달력·가격 지표·수급·실적·목표주가·추정·스냅샷·신용/공매도 — [시세]·[전체]가 "
+                      "갱신)와 증시 자금(tblMktFunds — [모두 새로 고침]). 수정하지 마세요", C["muted"]),
+            "_store": ("※ 가격 이력 저장소(일봉) — [시세]·[전체]가 이어 씁니다. 수정하지 마세요", C["muted"]),
+            "_seed": ("※ 빌더가 만든 정적 표(실행 제어·대회 명단·기본 테마표·이관 초기값 Seed) — 수정하지 마세요", C["muted"]),
+        }
+        for s in HIDDEN_SHEETS:
             ws = self.ws[s]
             ws.Cells.Font.Name = FONT
             ws.Cells.Font.Size = 9
-            put(ws, "B1", "※ Power Query 원본 데이터 (수정하지 마세요)", size=9, color=C["muted"])
+            text, color = notes.get(s, ("※ 숨김 데이터 (수정하지 마세요)", C["muted"]))
+            put(ws, "B1", text, size=9, color=color)
         self.ws["_sys"].Range("C:C").ColumnWidth = 12
-        put(self.ws["_sys"], "B1", "※ KIS 접근토큰 캐시 — 통합문서를 외부에 공유할 때는 이 표의 내용을 지우세요(24시간 유효)",
-            size=9, color=C["up"])
 
     # -------------------------------------------------------------------------------------------------------
     def nav_links(self, ws, row: int, start_col: int = 2):
-        items = [("대시보드", "대시보드"), ("시장", "시장"), ("포트폴리오", "포트폴리오"), ("리스크", "리스크"), ("성과", "성과"),
-                 ("시세판", "시세판"), ("매매일지", "매매일지"), ("매매분석", "매매분석"), ("종목DB", "종목DB"), ("설정", "설정"),
-                 ("가이드", "가이드")]
+        """상단 메뉴 줄: 보이는 시트 15개(spec R19 순서 — 새 페이지 업종·대회종목·종목분석·뉴스·이벤트 포함)를 2열 간격으로.
+        링크가 늘어 기존 메뉴 띠보다 길어지면 마지막 링크 뒤 칸까지 띠 색을 칠한다(밝은 글자가 흰 바탕에 묻히지 않게).
+        대회종목 페이지는 이 링크를 읽어 자기 열 폭에 맞게 다시 놓는다(page_company._nav_row)."""
         c = start_col
-        for label, sheet in items:
+        for sheet in NAV_ITEMS:
             cell = ws.Cells(row, c).Address
-            hyperlink(ws, cell, f"'{sheet}'!A1", "› " + label)
+            hyperlink(ws, cell, f"'{sheet}'!A1", "› " + sheet)
             c += 2
+        fill(ws.Range(ws.Cells(row, start_col), ws.Cells(row, c - 1)), "navy2")
 
     HEADER_RIGHT = ('="기준 "&IFERROR(TEXT(MAX(tblIndexNow[조회시각]),"yyyy-mm-dd hh:mm"),"-")&"  ·  토큰 "&'
                     'IFERROR(XLOOKUP("prod",tblToken[env],tblToken[status]),"-")')
@@ -1621,8 +2201,10 @@ class Builder:
         for key, choices in (("sector_basis", "대분류,업종,세부,대테마"), ("force_weekly", "Y,N")):
             if key in keys:
                 validation_list(lo.ListColumns("값").DataBodyRange.Cells(keys.index(key) + 1, 1), choices)
-        # 기본 설정 표가 새 키로 B6:E35까지 길어졌으므로 기존 안내 문구는 표 아래로(B28·B29에서 이동)
-        n = SETTINGS_NOTE_ROW
+        # 기본 설정 표가 새 키로 B6:E35까지 길어졌으므로 기존 안내 문구는 표 아래로(B28·B29에서 이동).
+        # 이관한 사용자 키가 더 있으면 표가 더 길어지므로 표 끝 + 빈 행 1개 아래(최소 SETTINGS_NOTE_ROW)에 둔다 — 표 바로 아래
+        # 행에 글자를 쓰면 Excel이 표를 자동으로 늘려 안내 문구가 설정 행이 된다(2026-10-01 이관 왕복 시험 실측: 30키 → 33키)
+        n = max(SETTINGS_NOTE_ROW, lo.Range.Row + lo.Range.Rows.Count + 1)
         put(ws, f"B{n}", "※ 앱키·시크릿은 이 통합문서에 저장되지 않습니다. Power Query가 위 경로의 kis_devlp.yaml(저장소 샘플코드와 같은 파일)을 직접 읽습니다.",
             size=9, color=C["muted"])
         put(ws, f"B{n + 1}", "※ 휴장일 목록은 참고용입니다. 한국거래소(KRX) 휴장일 공지로 확인 후 필요하면 수정하세요.", size=9, color=C["muted"])
@@ -1740,35 +2322,310 @@ class Builder:
         fill(ws.Range(f"B6:C{r}"), "card")
 
     # -------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------
+    def build_pages(self):
+        """새 페이지(spec R14~R18): 표를 적재·새로 고친 뒤 각 모듈의 build(builder). 종목분석은 tblContest(정적 표)가 있어야
+        대회 종목 드롭다운 이름(대회코드목록)을 만든다 — build_static_tables가 먼저 만든다."""
+        for mod in PAGE_MODULES:
+            mod.build(self)
+
+    def add_vba(self):
+        """VBA 모듈을 코드 텍스트로 넣는다(파일 가져오기 금지 — 이 PC에서 CP949로 읽혀 한글이 깨짐). 넣은 뒤 다시 읽어
+        .bas(Attribute 줄 제외)와 같은지 확인한다(공백 끝 차이만 무시)."""
+        for path in VBA_FILES:
+            comp = add_vba_module(self.wb, path)
+            with open(path, encoding="utf-8-sig") as fh:
+                _, kept = _vba_text(fh.read())
+            expected = [ln.rstrip() for _, ln in kept]
+            cm = comp.CodeModule
+            n = int(cm.CountOfLines)
+            actual = [ln.rstrip() for ln in str(cm.Lines(1, n)).split("\r\n")] if n else []
+            while actual and not actual[-1]:
+                actual.pop()
+            if actual == expected:
+                self.say(f"VBA 모듈 {comp.Name}: {len(actual)}줄 넣음 (원본 {os.path.basename(path)}와 같음 확인)")
+            else:
+                diff = next((i for i, (x, y) in enumerate(zip(actual, expected)) if x != y), min(len(actual), len(expected)))
+                self.say(f"⚠ VBA 모듈 {comp.Name}: 넣은 코드가 원본과 다름(줄 수 {len(actual)} vs {len(expected)}, 첫 차이 {diff + 1}행)")
+
+    def check_contract(self):
+        """빌드 결과 계약 점검: 이름 정의(최근 조회·상태·분석코드·대회코드목록)와 버튼 도형의 매크로 연결.
+        빠진 것이 있으면 실패(결과물을 출력 위치로 옮기지 않음)."""
+        problems = []
+        names = {}
+        for nm in self.wb.Names:
+            names[str(nm.Name)] = str(nm.RefersTo)
+        for nm in REQUIRED_NAMES:
+            if nm not in names:
+                problems.append(f"이름 정의 없음: {nm}")
+            elif "#REF!" in names[nm]:
+                problems.append(f"이름 정의가 깨짐: {nm} = {names[nm]}")
+        for sheet, shape, macro in REQUIRED_BUTTONS:
+            try:
+                act = str(self.ws[sheet].Shapes(shape).OnAction)
+            except Exception:  # noqa: BLE001
+                problems.append(f"버튼 없음: {sheet}!{shape}")
+                continue
+            if not act.endswith(macro):
+                problems.append(f"버튼 매크로 연결 다름: {sheet}!{shape} → {act!r} (기대 {macro})")
+        if problems:
+            raise RuntimeError("빌드 결과 점검 실패: " + "; ".join(problems))
+        self.say(f"점검: 이름 정의 {len(REQUIRED_NAMES)}개 · 버튼 {len(REQUIRED_BUTTONS)}개(매크로 연결) 확인")
+
+    def _count_rows(self, lo, cols=None) -> int:
+        """표의 데이터 행 수(cols 열이 모두 빈 행은 세지 않음 — 빈 입력표의 자리 행)."""
+        body = lo.DataBodyRange
+        if body is None:
+            return 0
+        names = [str(c.Name) for c in lo.ListColumns]
+        idx = [names.index(c) for c in (cols or names) if c in names]
+        vals = body.Value
+        if not isinstance(vals, tuple):
+            vals = ((vals,),)
+        return sum(1 for row in vals if any(not migrate.is_blank(row[j]) for j in idx))
+
+    def report_counts(self):
+        """이관 행 수 대조(spec R22): 원본(파일에서 읽은 행) → 새 통합문서(지금 표에 있는 행). 입력표가 다르면 빌드 실패."""
+        if self.plan is None and not any(c for _, c, _ in self.seeds.values()):
+            self.say("이관 없음 — 새로 만든 통합문서" + (" (샘플 포함)" if self.sample else ""))
+            return
+        lines, bad = [], []
+        if self.plan is not None:
+            for name, cols in migrate.INPUT_TABLES.items():
+                t = self.plan.tables.get(name)
+                new = self._count_rows(self.lo[name], cols)
+                if t is None:
+                    lines.append(f"  {name:<13} 원본에 표 없음 → {new}행 (기본값)")
+                    continue
+                ok = new == t.source_rows
+                note = (" · " + " · ".join(t.notes)) if t.notes else ""
+                lines.append(f"  {name:<13} {t.source_rows:>7} → {new:>7}  {'✓' if ok else '✗ 불일치'}{note}")
+                if not ok:
+                    bad.append(name)
+            info = self.settings_info
+            kv = self.lo["tblSettings"].ListColumns("키").DataBodyRange.Value
+            kv = kv if isinstance(kv, tuple) else ((kv,),)
+            keys_new = [str(v[0]).strip() for v in kv if v[0] is not None]
+            lost = [k for k, *_ in self.plan.settings if k not in keys_new]
+            written = len(info["kept"]) + len(info["added"]) + len(info.get("extra", []))
+            extra = f" · 원본에만 있던 키 {len(info['extra'])}개 유지" if info.get("extra") else ""
+            mark = "✓" if not lost and len(keys_new) == written else (
+                "✗ 빠진 키 " + ", ".join(lost) if lost else f"✗ 표 행 {len(keys_new)}개 ≠ 넣은 키 {written}개")
+            lines.append(f"  {'tblSettings':<13} {info['source']:>5}키 → {len(keys_new):>5}키  {mark}"
+                         f" (사용자 값 유지 {len(info['kept'])} · 새 키 기본값 {len(info['added'])}{extra})")
+            if lost or len(keys_new) != written:
+                bad.append("tblSettings")
+        for seed, (own, n_seed, origin) in self.seeds.items():
+            had = self.plan is not None and own in self.plan.tables
+            lo_own = self.lo.get(own)
+            n_own = 0 if lo_own is None or lo_own.DataBodyRange is None else int(lo_own.ListRows.Count)
+            if not n_seed and not had:
+                lines.append(f"  {own:<13} 원본에 없음 → {n_own}행")
+                continue
+            mark = "✓" if n_own == n_seed else "△ (중복·빈 행 정리 또는 상태 행)"
+            lines.append(f"  {own:<13} {n_seed:>7} → {n_own:>7}  {mark} ({origin or '통합문서'} → {seed} → {own})")
+        if self.token is not None:
+            lines.append(f"  {'tblToken':<13} 이관(남은 {self.token.minutes_left()}분) → 상태 '{self._token_status()}'")
+        else:
+            lines.append(f"  {'tblToken':<13} 이관 없음 → 상태 '{self._token_status()}'")
+        self.say("이관 행 수 대조 (원본 → 새 통합문서):")
+        for ln in lines:
+            self.say(ln)
+        if bad:
+            raise RuntimeError("이관 행 수 불일치: " + ", ".join(bad) + " — 결과물을 출력 위치로 옮기지 않습니다(원본·백업은 그대로)")
+
     def finish(self):
         for t in self.temp_rows:
             try:
                 self.lo[t].ListRows(1).Delete()
             except Exception as e:
                 self.say(f"임시 행 삭제 실패: {t} {e}")
-        for s in ("_data", "_sys"):
+        for s in HIDDEN_SHEETS:
             self.ws[s].Visible = XL_SHEET_HIDDEN
         self.xl.CalculateFull()
         self.ws["대시보드"].Activate()
         self.ws["대시보드"].Range("A1").Select()
+        try:
+            self.wb.EnableAutoRecover = True     # create_workbook에서 끈 자동 복구를 사용자 통합문서에는 다시 켬
+        except Exception:  # noqa: BLE001
+            pass
         self.wb.Save()
-        self.say(f"저장 완료: {self.out}")
+        self.say(f"저장 완료(작업 위치): {self.out}")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# 실행 (이관 원본 선택 → 계획 읽기 → 토큰 확인 → 백업 → 빌드 → 결과 옮기기 → .xlsx 원본 옮기기)
+# ---------------------------------------------------------------------------------------------------------------
+def _cleanup_work(work: str) -> None:
+    """작업 폴더의 빌드 결과(빌더 소유 — 토큰 사본이 들어 있을 수 있음)를 지우고 빈 작업 폴더도 지운다."""
+    try:
+        if os.path.isfile(work):
+            os.remove(work)
+        d = os.path.dirname(work)
+        if os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+    except OSError:
+        pass
+
+
+def run_build(a) -> int:
+    """명령줄 인수로 빌드 전체를 실행하고 종료 코드를 돌려준다: 0 성공 · 1 빌드 실패 · 2 토큰 갱신 필요 · 3 이관·설정 문제(시작 전 중단)."""
+    log: list[str] = []
+
+    def say(msg: str) -> None:
+        print(msg, flush=True)
+        log.append(msg)
+
+    t0 = time.time()
+    out = os.path.abspath(a.out)
+    if not out.lower().endswith(".xlsm"):
+        new_out = os.path.splitext(out)[0] + ".xlsm"
+        say(f"⚠ 결과물은 매크로 포함 형식(.xlsm)이라 출력 확장자를 바꿉니다: {new_out}")
+        out = new_out
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    bdir = migrate.backup_dir_for(out)
+    hcsv = migrate.history_csv_path(out)
+    work = os.path.join(os.path.dirname(out), BUILD_TMP_DIR, os.path.basename(out))
+    log_path = os.path.join(bdir, f"{os.path.splitext(os.path.basename(out))[0]}_{stamp}_build.log")
+
+    def finish_log(code: int) -> int:
+        try:
+            os.makedirs(bdir, exist_ok=True)
+            with open(log_path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(log) + "\n")
+            print(f"빌드 로그: {log_path}", flush=True)
+        except OSError:
+            pass
+        return code
+
+    # 1) 이관 원본 (spec R22): --migrate-from > 출력 위치 .xlsm > 같은 위치 .xlsx. --no-migrate면 그 파일은 토큰 캐시에만 씀
+    try:
+        if a.resume:
+            source, token_src = None, None
+        elif a.no_migrate:
+            source, token_src = None, migrate.select_source(out, a.migrate_from)
+        else:
+            source = migrate.select_source(out, a.migrate_from)
+            token_src = source
+    except migrate.MigrationError as e:
+        say(f"[중단] {e}")
+        return 3
+    # 2) 잠금 확인 — 원본은 옮기거나 덮을 수 있고 출력은 덮으므로 Excel에서 열려 있으면 시작하지 않음
+    for p in sorted({x for x in (source, out) if x and os.path.exists(x)}):
+        if migrate.is_locked(p):
+            say(f"[중단] 파일이 다른 프로그램(Excel)에서 열려 있습니다 — 닫고 다시 실행하세요: {p}")
+            return 3
+        if os.path.exists(migrate.owner_file(p)):
+            say(f"⚠ Excel 소유자 파일(~$)이 있습니다. 이 파일을 열어 둔 Excel이 있다면 저장하지 않은 변경은 이관되지 않습니다: {p}")
+    # 3) 이관 계획 (Excel로 열지 않고 파일을 직접 읽음 — 토큰 포함)
+    plan, token, token_note, est_snap = None, None, "", None
+    if source:
+        say(f"이관 원본: {source}")
+        try:
+            plan = migrate.read_plan(source, SHEETS, hcsv)
+        except migrate.MigrationError as e:
+            say(f"[중단] {e}")
+            say("  이관 없이 새로 만들려면 --no-migrate (기존 파일은 백업 폴더에 복사해 두고, 스냅샷은 history\\est_snap.csv에서 복원)")
+            return 3
+        token, token_note = plan.token, plan.token_note
+        found = [f"{n} {t.source_rows}행" + (f"({t.origin})" if t.origin != "통합문서" else "") for n, t in plan.tables.items()]
+        say(f"  읽은 표: tblSettings {plan.settings_count}키 · " + " · ".join(found))
+        for s in plan.unknown_sheets:
+            say(f"⚠ 사용자 추가 시트 '{s}'는 이관하지 않습니다(백업본에 남아 있음)")
+        for w in plan.warnings:
+            say(f"⚠ {w}")
+    elif not a.resume:
+        say("이관 안 함(--no-migrate) — 입력표를 새로 만듭니다" if a.no_migrate else "이관 원본 없음 — 처음 빌드")
+        if token_src:
+            token, token_note = migrate.read_token_only(token_src)
+            say(f"  토큰 캐시 원천: {token_src} ({token_note})")
+        try:
+            est_snap = migrate.read_est_snap_csv(hcsv)
+        except (OSError, csv.Error, UnicodeDecodeError) as e:
+            say(f"⚠ 이력 CSV를 읽지 못함({type(e).__name__}): {hcsv}")
+        if est_snap is not None:
+            say(f"  tblEstSnap: 이력 CSV에서 복원 {len(est_snap.rows)}행 ← {hcsv}")
+    # 4) 토큰 확인 (plan §0: 남은 시간이 기준 미만이면 Excel을 띄우지 않고 멈춤 — 갱신은 원본을 열어 T_Token으로)
+    if token is not None:
+        left = token.minutes_left()
+        if left < TOKEN_MIN_MINUTES:
+            say(f"[중단] 토큰 갱신 필요: 토큰 남은 시간 {left}분 (기준 {TOKEN_MIN_MINUTES}분). 원본 통합문서를 Excel로 열어 "
+                f"[데이터] > [모두 새로 고침]으로 토큰을 갱신·저장한 뒤 다시 실행하세요(Excel을 띄우지 않고 멈춤).")
+            return 2
+        say(f"토큰 캐시: 남은 {left}분 (기준 {TOKEN_MIN_MINUTES}분 이상 — 새 통합문서에 옮겨 재사용, 값은 표시하지 않음)")
+    elif plan is not None:
+        say(f"[중단] 토큰 갱신 필요: 이관 원본에 쓸 수 있는 토큰이 없습니다({token_note}). 원본 통합문서를 Excel로 열어 "
+            f"[데이터] > [모두 새로 고침]으로 토큰을 받은 뒤 다시 실행하세요.")
+        return 2
+    # 5) 설정 파일: --cfg를 주면 그 경로, 이관이면 원본 설정의 cfg_path, 아니면 기본 경로
+    cfg_explicit = a.cfg is not None
+    if cfg_explicit:
+        cfg = os.path.abspath(a.cfg)
+    elif plan is not None:
+        v = next((s[2] for s in plan.settings if s[0] == "cfg_path"), None)
+        cfg = str(v).strip().strip('"') if not migrate.is_blank(v) else DEFAULT_CFG
+    else:
+        cfg = DEFAULT_CFG
+    if not os.path.exists(cfg):
+        say(f"[중단] KIS 설정 파일이 없습니다: {cfg}  (--cfg 로 경로 지정)")
+        return 3
+    # 6) 백업 — 원본(복사), 그리고 덮어쓸 출력 파일이 원본과 다르면 그것도
+    backups: dict[str, str] = {}
+    try:
+        if source:
+            backups[source] = migrate.backup_copy(source, bdir, stamp)
+            say(f"백업: {source} → {backups[source]}")
+        if os.path.exists(out) and (source is None or os.path.normcase(out) != os.path.normcase(source)):
+            backups[out] = migrate.backup_copy(out, bdir, stamp)
+            say(f"백업(덮어쓸 출력 파일): {out} → {backups[out]}")
+    except (OSError, migrate.MigrationError) as e:
+        say(f"[중단] 백업 실패: {e}")
+        return finish_log(3)
+    # 7) 빌드 (작업 폴더에서) — 실패하면 출력 위치의 파일은 그대로
+    sample = plan is None and not a.empty and not a.resume
+    b = Builder(out, cfg, sample, a.visible, a.seed_token, work_path=work, plan=plan, token=token, est_snap=est_snap,
+                vbom_lock=a.vbom_lock, log=log, cfg_explicit=cfg_explicit)
+    try:
+        b.run(resume=a.resume, checkpoint=a.checkpoint)
+    except Exception as e:  # noqa: BLE001 — 어떤 실패든 사유를 남기고 작업 파일 정리
+        import traceback
+        say(f"[실패] 빌드 중 오류: {type(e).__name__}: {e}")
+        say(traceback.format_exc())
+        _cleanup_work(work)
+        say("출력 위치의 기존 파일·이관 원본은 바뀌지 않았습니다" + (f" (백업: {', '.join(backups.values())})" if backups else ""))
+        return finish_log(1)
+    # 8) 결과를 출력 위치로 (덮는 파일은 6)에서 백업함)
+    try:
+        os.replace(work, out)
+    except OSError as e:
+        say(f"[실패] 결과물을 출력 위치로 옮기지 못했습니다({e}) — 결과물은 {work}에 있습니다")
+        return finish_log(1)
+    _cleanup_work(work)
+    say(f"출력: {out} ({os.path.getsize(out) / 1e6:.1f} MB)")
+    # 9) .xlsx 원본은 백업 폴더로 옮김(살아 있는 통합문서는 .xlsm 하나만 남게 — 다음 빌드가 오래된 파일에서 이관하지 않도록)
+    if source and source.lower().endswith(".xlsx") and os.path.normcase(source) != os.path.normcase(out):
+        try:
+            say(migrate.move_into_backup(source, backups.get(source, ""), bdir, stamp))
+        except OSError as e:
+            say(f"⚠ .xlsx 원본을 백업 폴더로 옮기지 못했습니다({e}) — 직접 옮기세요: {source}")
+    say(f"레지스트리: {b.vbom_message}")
+    say(f"완료 ({time.time() - t0:.0f}s)")
+    return finish_log(0)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="KIS PM 일일 대시보드 생성")
-    ap.add_argument("--out", default=DEFAULT_OUT)
-    ap.add_argument("--cfg", default=DEFAULT_CFG, help="kis_devlp.yaml 경로")
-    ap.add_argument("--empty", action="store_true", help="샘플 매매·관심종목 없이 생성")
+    ap = argparse.ArgumentParser(description="KIS PM 일일 대시보드(.xlsm) 생성 — 기존 통합문서에서 자동 이관")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="출력 .xlsm 경로 (기본 excel_dashboard/KIS_PM_Dashboard.xlsm)")
+    ap.add_argument("--cfg", default=None, help="kis_devlp.yaml 경로 (기본: 이관한 설정의 cfg_path, 없으면 ~/KIS/config/kis_devlp.yaml)")
+    ap.add_argument("--empty", action="store_true", help="(이관 원본이 없을 때) 샘플 매매·관심종목 없이 생성")
     ap.add_argument("--visible", action="store_true")
+    ap.add_argument("--migrate-from", help="이관 원본 통합문서(.xlsm/.xlsx). 없으면 출력 위치의 .xlsm → 같은 위치의 .xlsx")
+    ap.add_argument("--no-migrate", action="store_true", help="이관 없이 새로 생성(덮어쓸 파일은 백업). 이력 CSV의 스냅샷은 복원")
     ap.add_argument("--checkpoint", help=argparse.SUPPRESS)
     ap.add_argument("--resume", help=argparse.SUPPRESS)
     ap.add_argument("--seed-token", help=argparse.SUPPRESS)
-    a = ap.parse_args()
-    if not os.path.exists(a.cfg):
-        sys.exit(f"[오류] KIS 설정 파일이 없습니다: {a.cfg}  (--cfg 로 경로 지정)")
-    Builder(a.out, a.cfg, sample=not a.empty, visible=a.visible, seed_token=a.seed_token).run(
-        resume=a.resume, checkpoint=a.checkpoint)
+    ap.add_argument("--vbom-lock", help=argparse.SUPPRESS)     # 개발용: AccessVBOM 잠금 파일(병렬 작업 상호 배제)
+    sys.exit(run_build(ap.parse_args()))
 
 
 if __name__ == "__main__":
