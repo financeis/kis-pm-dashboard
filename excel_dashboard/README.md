@@ -1,7 +1,7 @@
 # KIS PM Daily Dashboard (Excel + Power Query)
 
 KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를 운용역처럼 관리하기 위한 **일일 대시보드**입니다.
-한국투자증권 Open API를 Excel Power Query가 직접 호출하며, 이 저장소 `examples_llm/`의 URL·tr_id·파라미터를 M 코드로 옮겼습니다.
+한국투자증권 Open API를 Excel Power Query가 직접 호출하며, KIS 공식 예제 저장소([koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api)) `examples_llm/`의 URL·tr_id·파라미터를 M 코드로 옮겼습니다.
 **조회 전용**이며 주문·계좌 API는 쓰지 않습니다.
 
 대회 종목 약 530개를 Q.Pack(삼성증권 퀀트 데이터팩) 'Company' 시트처럼 한눈에 보는 **[대회종목]**, KRX 업종·테마 시세의 **[업종]**,
@@ -25,7 +25,7 @@ excel_dashboard/
 
 ## 1. 준비
 
-1. `~/KIS/config/kis_devlp.yaml`에 **실전투자** 앱키(`my_app`)·시크릿(`my_sec`)·도메인(`prod`)이 있어야 합니다(저장소 README 3.5절).
+1. `~/KIS/config/kis_devlp.yaml`에 **실전투자** 앱키(`my_app`)·시크릿(`my_sec`)·도메인(`prod`)이 있어야 합니다(형식은 [저장소 README](../README.md#kis-설정-파일)).
    시세·순위·수급 API는 모의투자 도메인에서 지원되지 않는 경우가 많아 실전 도메인으로 조회만 합니다.
 2. Windows + Microsoft 365 Excel (LET·FILTER·SORTBY·TAKE·VSTACK·HSTACK·XLOOKUP·LAMBDA 사용).
 3. **업종 분류 파일**: VALUESearch에서 내보낸 `수집기업_valuesearch.xlsx`(시트 `Sheet2`, 1행 머리글). 기본 위치는 저장소 루트이며,
@@ -152,7 +152,7 @@ python excel_dashboard/build_dashboard.py
 - **호출 제한**: 초당 건수 초과(`EGW00201`)만 짧은 백오프로 최대 5회 재시도.
 - **실패 시**: 오류 창 대신 직전 데이터를 유지하고 `상태`에 `이전 데이터(갱신 실패: 사유)`, 일부 종목만 실패하면 그 행만 `오류: …`.
 
-사용 API(모두 `examples_llm/` 참고, 조회 전용):
+사용 API(모두 KIS 공식 예제 저장소 `examples_llm/` 참고, 조회 전용):
 
 | 용도 | API | tr_id |
 |---|---|---|
@@ -172,7 +172,7 @@ python excel_dashboard/build_dashboard.py
 | 이벤트 | 예탁원정보: 상장정보·유상증자·무상증자·합병/분할·배당·주주총회 | HHKDB669107C0 / 669100 / 669101 / 669104 / 669102 / 669111 |
 | 뉴스·공시 제목 / 증시 자금 | 종합 시황/공시(제목) / 국내 증시자금 종합 | FHKST01011800 / FHKST649100C0 |
 | 체결금액별 / 매물대 | 국내주식 체결금액별 매매비중 / 매물대·거래비중 | FHKST111900C0 / FHPST01130000 |
-| 종목·업종 마스터 | KIS 종목정보 파일(`stocks_info/`와 동일, 인증 불필요) | — |
+| 종목·업종 마스터 | KIS 종목정보 파일(공식 예제 저장소 `stocks_info/`와 동일, 인증 불필요) | — |
 
 ## 9. 데이터 한계 (빈칸이 정상인 경우)
 
@@ -209,7 +209,7 @@ VBA로 자동화할 때는 `Application.CalculateUntilAsyncQueriesDone`을 쓰�
 - 앱키·시크릿은 통합문서에 저장되지 않습니다(Power Query가 `kis_devlp.yaml`을 직접 읽음).
 - 숨김 시트 `_sys`의 `tblToken`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`의 백업본에도 들어 있으니 남에게 보내기 전에 이 표 내용을 지우세요. `.xlsm`·`backup/`·`history/`는 git에서 제외됩니다.
 - 코드는 비공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력은 저장소에 들어가지 않습니다. VALUESearch 파일(유료 자료)은 비공개라서 넣었으니 저장소를 공개로 바꾸지 마세요.
-- 저장소 루트의 `kis_devlp.yaml`은 공식 예제의 빈 양식으로 git에 들어 있습니다. 이 PC에서는 그 파일에 실제 앱키를 적어 두었기 때문에, 실수로 커밋되지 않도록 git이 로컬 변경을 무시하게 해 두었습니다(`git update-index --skip-worktree kis_devlp.yaml`, 되돌리기는 `--no-skip-worktree`). 다른 PC에서도 실제 값은 `~/KIS/config/kis_devlp.yaml`에만 두세요.
+- `kis_devlp.yaml`은 git에 들어 있지 않습니다(2026-10-08에 공식 예제의 빈 양식을 저장소에서 뺌). 저장소 루트에 이 파일을 두더라도 `.gitignore`가 막으며, 실제 값은 `~/KIS/config/kis_devlp.yaml`에만 두세요.
 - 대회 계좌 잔고는 자동으로 가져오지 않습니다(모의투자 앱키 없음). 대회 체결 내역을 [매매일지]에 옮겨 적습니다.
 
 ## 12. 개발·검증 도구 (`tools/`)

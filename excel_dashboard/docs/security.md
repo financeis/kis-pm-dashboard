@@ -33,7 +33,7 @@
 - 토큰은 `_sys`에만 있어야 한다. 다른 시트·쿼리·연결에 토큰 문자열이 있으면 결함이다.
 - 통합문서·`backup/`·`history/`·Q.Pack PDF는 git에서 제외한다. VALUESearch 파일은 사용자 결정으로 비공개 저장소에만 넣는다. 통합문서를 남에게 보낼 때는 `tblToken` 내용을 지운다.
 - 푸시는 비공개 저장소 `origin`(`financeis/kis-pm-dashboard`)으로만 한다. `upstream`(KIS 공식 저장소)에는 올리지 않는다. 푸시 전에는 올라갈 커밋의 모든 파일·커밋 메시지에 실제 앱키·시크릿·계좌번호·HTS ID·토큰이 없는지 값 비교로 확인한다(값은 출력하지 않음).
-- 저장소 루트 `kis_devlp.yaml`은 공식 예제의 빈 양식으로 추적되는 파일인데, 이 PC의 작업 사본에는 실제 앱키·시크릿이 적혀 있다. `git update-index --skip-worktree kis_devlp.yaml`로 로컬 변경을 git이 무시하게 해 두었다 — 이 표시를 풀거나 이 파일을 커밋하지 않는다.
+- 저장소 루트 `kis_devlp.yaml`은 2026-10-08에 추적을 끊고 `.gitignore`(`/kis_devlp.yaml`)로 막았다. 이 PC의 작업 사본에는 실제 앱키·시크릿이 적혀 있으니 이 제외 규칙을 지우거나 `git add -f`하지 않는다.
 
 ## 개발 중 토큰 규칙
 

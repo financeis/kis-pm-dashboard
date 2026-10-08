@@ -1,5 +1,5 @@
 // fnCfg : KIS 설정 파일(kis_devlp.yaml)을 읽어 레코드로 반환
-//  - 앱키/시크릿은 통합문서에 저장하지 않고, 저장소 샘플코드(kis_auth.py)와 같은 파일을 그대로 읽습니다.
+//  - 앱키/시크릿은 통합문서에 저장하지 않고, KIS 공식 샘플코드(kis_auth.py)와 같은 파일을 그대로 읽습니다.
 //  - "key: value", "key: ""value""", "key: 'value'  # 주석" 형식을 모두 지원
 () as record =>
 let

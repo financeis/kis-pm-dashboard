@@ -224,7 +224,7 @@ def load_valuesearch(path: str) -> dict[str, dict]:
 
 def load_theme_master(zip_path: str) -> dict[str, list[str]]:
     """KIS 테마 마스터 → {종목코드: [테마명, ...]}.
-    한 줄 = 고정폭 52바이트(cp949): 테마코드 3 + 테마명(공백 채움) + 종목코드 6 + 공백 3 (stocks_info/theme_code.py와 같은 배치)."""
+    한 줄 = 고정폭 52바이트(cp949): 테마코드 3 + 테마명(공백 채움) + 종목코드 6 + 공백 3 (KIS 공식 예제 저장소 stocks_info/theme_code.py와 같은 배치)."""
     import zipfile
 
     with zipfile.ZipFile(zip_path) as zf:

@@ -1,404 +1,160 @@
-**[LLM Repository Guide]**
+# KIS PM Dashboard
 
-ChatGPT, Claude 등 LLM(Large Language Model)과 AI 에이전트가 이 저장소를 보다 쉽게 탐색할 수 있도록 `llms.txt`를 제공합니다.
-- [`llms.txt`](./llms.txt)
+KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를 운용역처럼 관리하기 위한 **Excel 일일 대시보드**입니다.
+한국투자증권(KIS) Open API를 Excel Power Query가 직접 조회하고, 파이썬 빌더가 Excel COM으로 통합문서 `KIS_PM_Dashboard.xlsm`(VBA 버튼 포함)을 만들거나 다시 만듭니다.
 
-**[당사에서 제공하는 샘플코드에 대한 유의사항]**
+- **조회 전용** — 주문·정정·취소·계좌 API는 쓰지 않습니다.
+- 대회 종목 약 530개를 한눈에 보는 [대회종목], KRX 업종·테마 시세의 [업종], 한 종목을 깊게 보는 [종목분석], 이벤트·뉴스의 [뉴스·이벤트] 페이지와 [대시보드]·[시장]·[포트폴리오]·[리스크]·[성과]·[시세판]·[매매일지] 시트가 있습니다.
+- 사용 방법·버튼·매일 루틴·문제 해결은 **[excel_dashboard/README.md](excel_dashboard/README.md)** 에 있습니다.
 
-- 샘플 코드는 한국투자증권 Open API(KIS Developers)를 연동하는 예시입니다. 고객님의 개발 부담을 줄이고자 참고용으로 제공되고 있습니다.
-- 샘플 코드는 별도의 공지 없이 지속적으로 업데이트될 수 있습니다.
-- 샘플 코드를 활용하여 제작한 고객님의 프로그램으로 인한 손해에 대해서는 당사에서 책임지지 않습니다.
+## 화면과 기능
 
-# KIS Open API 샘플 코드 저장소 (LLM 지원)
+> 아래 화면은 실제 통합문서를 캡처한 것입니다(데이터 기준 2026-10-02 03:10, 대회 D+21, Excel 확대/축소 55%).
+> 이미지를 누르면 원본 크기로 볼 수 있습니다.
 
-## 1. 제작 의도 및 대상
+### 대시보드 — 하루를 여는 첫 화면
 
-### 🎯 제작 의도
+![대시보드](excel_dashboard/docs/screenshots/dashboard.png)
 
-이 저장소는 **ChatGPT, Claude 등 LLM(Large Language Model)** 기반 자동화 환경과 Python 개발자 모두가
-**한국투자증권(Korea Investment & Securities) Open API를 쉽게 이해하고 활용**할 수 있도록 구성된 샘플 코드 모음입니다.
+- **KPI 8개**: 순자산, 일간 손익, 누적 수익률(벤치마크 대비 초과), 샤프지수(연율), 변동성, 최대낙폭(MDD), 현금 비중, 대회 진행(D+n·남은 거래일)
+- **시장 스트립**: KOSPI·KOSDAQ·KOSPI200·VKOSPI, 외국인·기관 순매수, 원/달러, S&P500·NASDAQ·SOX, 미국 10년·국고 3년
+- 누적 수익률 vs 벤치마크 차트, **보유 종목**(비중·수익률·손절여유·신호), **오늘의 알림**(손절선 이탈·목표가 도달·급변동·변동성 초과·관심종목 수급 신호), 섹터 비중, 낙폭 차트
+- 거래대금·외국인 순매수·상승률 **상위 10**(★ = 대회 종목, 파란 굵은 글씨 = 보유·관심)
 
-- `examples_llm/`: LLM이 단일 API 기능을 쉽게 탐색하고 호출할 수 있도록 구성된 기능 단위 샘플 코드
-- `examples_user/`: 사용자가 실제 투자 및 자동매매 구현에 활용할 수 있도록 상품별로 통합된 API 호출 예제 코드
-- `strategy_builder/`: 비주얼 UI로 매매 전략을 설계하고, 생성된 시그널 바탕으로 매수/매도 가능
-- `backtester/`: 설계한 전략을 과거 데이터로 검증하는 백테스팅 엔진
+### 시장 — 지수·수급·업종·해외
 
-> AI와 사람이 모두 활용하기 쉬운 구조를 지향합니다.
+![시장](excel_dashboard/docs/screenshots/market.png)
 
-[한국투자증권 Open API 포털 바로가기](https://apiportal.koreainvestment.com/)
+- 지수 카드(상승·하락·보합 종목 수, 연중 고저), 최근 60영업일 누적 등락, 투자자별 순매수(당일·5일·20일)와 20일 차트
+- KOSPI·KOSDAQ 업종 등락 히트맵, 해외 지수·환율·금리, 주도주 순위 6종(거래대금·거래량 급증 등), 증시 자금 동향(고객예탁금·신용융자·MMF 등)
 
-### 👤 대상 사용자
+### 업종 — KRX 업종지수와 테마 집계 ([업종] 버튼)
 
-- 한국투자증권 Open API를 처음 사용하는 Python 개발자
-- 기존 Open API 사용자 중 코드 개선 및 구조 학습이 필요한 사용자
-- LLM 기반 코드 에이전트를 활용해 종목 검색, 시세 분석, 자동매매 등을 구현하고자 하는 사용자
+![업종](excel_dashboard/docs/screenshots/sector.png)
 
-## 2. 폴더 구조 및 주요 파일 설명
+- **A. KRX 업종지수**(KOSPI 24·KOSDAQ 22): 1D~1Y 기간 등락, 외국인·기관·개인 순매수(1D·1W·1M)
+- **B. 테마 집계**: 대테마·세부테마별 시총가중 등락, 상승 종목 비율, 수급
+- 열마다 Q.Pack식 3색 척도(초록 낮음 → 노랑 → 빨강 높음)로 상대 위치를 한눈에
 
-### 2.1. 폴더 구조
+### 대회종목 — 대회 종목 527개를 한 표로 ([시세]·[전체] 버튼)
+
+![대회종목](excel_dashboard/docs/screenshots/contest.png)
+
+- 대회 규칙(9/30 시가총액 1,000억 이상 & 5일 평균 거래대금 25억 이상 보통주)으로 고정한 527종목 + 대회 밖 보유·관심 종목, 103열
+- 가격 변화 1D~1Y, **최근 20일 줄무늬**, 외국인·기관 순매수(시총 대비 %), 후행·Fwd PER과 변화, 목표주가 컨센서스·괴리율, 분기 실적, 신용·공매도·대차, 다음 이벤트, NICS 업종·테마
+- 색 기준점은 대회 종목만으로 계산하고, 세부 열은 +/− 묶음으로 접어 둠
+- [시세]는 현재가와 마지막 세션만(약 30초), [전체]는 분류·수급·목표주가·추정·이벤트까지 갱신(평일 약 4~5분)
+
+### 종목분석 — 한 종목을 깊게 ([조회] 버튼)
+
+종목코드를 넣고 [조회]를 누르면 한 종목만 13개 구역을 한 번에 조회합니다(약 1분).
+120세션 가격과 투자자별 순매수·누적, 체결금액별 매매비중, 매물대, 외인·기관 추정가집계, 신용·공매도·대차 60세션,
+증권사별 목표가·월말 컨센서스, KIS 추정, 8분기 실적, 뉴스 40건, 이벤트가 들어 있습니다.
+(캡처한 통합문서에서는 아직 [조회]를 실행하지 않아 화면을 싣지 않았습니다.)
+
+### 뉴스·이벤트
+
+![뉴스·이벤트](excel_dashboard/docs/screenshots/news-events.png)
+
+- **이벤트 캘린더**(−7일 ~ +60일): CB·BW 전환 상장, 신규상장, 유·무상증자, 합병·분할, 배당 기준일, 주주총회 — 보유 종목 강조, D-day 표시
+- 보유·관심 종목 **뉴스·공시 제목** 최근 100건
+
+### 포트폴리오 · 리스크 · 성과
+
+![포트폴리오](excel_dashboard/docs/screenshots/portfolio.png)
+
+- **포트폴리오**: 순자산·주식 평가액·현금·평가손익·실현손익·포트 베타, 보유 종목별 평균단가·평가손익·기여도·손절가/목표가·여유, 기술지표(RSI·이격도)·위험기여·외인/기관 5일 수급·신호
+
+![리스크](excel_dashboard/docs/screenshots/risk.png)
+
+- **리스크**: 사전 변동성, 포트 베타, VaR 95%(1일, 모수·과거), 최대 위험기여 종목, 상위 3종목·최대 섹터 비중, 분산 효과, 종목별 위험기여(비중 대비)와 섹터 집중도
+
+![성과](excel_dashboard/docs/screenshots/performance.png)
+
+- **성과**: 대회 지표 27종(누적·초과 수익률, 샤프·소르티노·칼마, 변동성, MDD, 알파·베타, 정보비율, 일간 승률 등), 누적 수익률·벤치마크·초과수익 차트, 일간 수익률, 낙폭·20일 변동성, 종목별 손익 기여, 일별 NAV 원장
+
+### 시세판 — 보유·관심 종목 장중 감시
+
+![시세판](excel_dashboard/docs/screenshots/quote-board.png)
+
+- 선택 종목의 가격·이동평균·거래량 차트(최근 100영업일)
+- 보유·관심 종목의 시세·밸류·52주 위치·수급·신호, 대테마, 외인·기관 추정가집계(장중), 신용잔고율, 공매도 비중, 다음 이벤트
+
+### 매매일지 · 매매분석
+
+![매매일지](excel_dashboard/docs/screenshots/trade-journal.png)
+
+- **매매일지**: 대시보드의 **유일한 입력표**. 체결 한 줄(일자·종목·매수/매도·수량·단가·매매근거)을 적으면 보유·NAV·성과가 모두 다시 계산됩니다. 대회 종목이 아니면 `⚠ 대회 종목 아님` 표시(화면의 행은 빌더가 넣은 예시)
+
+![매매분석](excel_dashboard/docs/screenshots/trade-analytics.png)
+
+- **매매분석**: 거래별 실현손익(이동평균 원가), 승률, 평균 수익·손실, 손익비, 거래비용, 평균 보유기간
+
+### 종목DB — 전체 유니버스와 분류
+
+![종목DB](excel_dashboard/docs/screenshots/universe.png)
+
+- KOSPI·KOSDAQ 개별종목 전체에 대회편입(Y/N), 섹터, NICS 대분류·업종·세부(VALUESearch), 대테마·세부테마, KRX 업종, 분류 출처를 붙인 기준표
+- 분류를 바꾸고 싶으면 [설정]의 **수정표**에 종목코드와 바꿀 칸만 적습니다
+
+이 밖에 [설정](대회 기간·초기자금·수수료·벤치마크·관심종목·수정표)과 [가이드](처음 설정·매일 루틴·지표 정의·문제 해결) 시트가 있습니다.
+
+## 저장소 구성
 
 ```
-# 프로젝트 구조
 .
-├── README.md                    # 프로젝트 설명서
-├── strategy_builder/            # 전략 설계 + 시그널 생성 엔진           ← New
-├── backtester/                  # 백테스팅 엔진 (QuantConnect Lean)   ← New
-│
-├── docs/
-│   └── convention.md            # 코딩 컨벤션 가이드
-├── examples_llm/                  # LLM용 샘플 코드
-│   ├── kis_auth.py              # 인증 공통 함수
-│   ├── auth                     # 인증(토큰 발급)
-│   │   ├── auth_token               # REST 접근토큰 발급
-│   │   └── auth_ws_token            # 웹소켓 접속키 발급
-│   ├── domestic_bond            # 국내채권
-│   │   └── inquire_price        # API 단일 기능별 폴더
-│   │       ├── inquire_price.py         # 한줄 호출 파일 (예: 채권 가격 조회)
-│   │       └── chk_inquire_price.py     # 테스트 파일 (예: 채권 가격 조회 결과 검증)
-│   ├── domestic_futureoption    # 국내선물옵션
-│   ├── domestic_stock           # 국내주식
-│   ├── elw                      # ELW
-│   ├── etfetn                   # ETF/ETN
-│   ├── overseas_futureoption    # 해외선물옵션
-│   └── overseas_stock           # 해외주식
-├── examples_user/                 # user용 실제 사용 예제
-│   ├── kis_auth.py              # 인증 공통 함수
-│   ├── auth                     # 인증(토큰 발급)
-│   │   ├── auth_functions.py            # 인증 함수 모음
-│   │   └── auth_examples.py             # 인증 실행 예제
-│   ├── domestic_bond            # 국내채권
-│   │   ├── domestic_bond_functions.py        # (REST) 통합 함수 파일 (모든 API 함수 모음)
-│   │   ├── domestic_bond_examples.py         # (REST) 실행 예제 파일 (함수 사용법)
-│   │   ├── domestic_bond_functions_ws.py     # (Websocket) 통합 함수 파일
-│   │   └── domestic_bond_examples_ws.py      # (Websocket) 실행 예제 파일
-│   ├── domestic_futureoption    # 국내선물옵션
-│   ├── domestic_stock           # 국내주식
-│   ├── elw                      # ELW
-│   ├── etfetn                   # ETF/ETN
-│   ├── overseas_futureoption    # 해외선물옵션
-│   └── overseas_stock           # 해외주식
-├── legacy/                      # 구 샘플코드 보관
-├── stocks_info/                 # 종목정보파일 참고 데이터
-├── kis_devlp.yaml               # API 설정 파일 (개인정보 입력 필요)
-├── pyproject.toml               # (uv)프로젝트 의존성 관리
-└── uv.lock                      # (uv)의존성 락 파일
+├── README.md                  # 이 파일
+├── excel_dashboard/           # 대시보드 전체(빌더·Power Query·VBA·페이지·도구·문서)
+│   ├── README.md              # 사용자 안내(준비·빌드·버튼·지표·문제 해결)
+│   ├── CLAUDE.md / AGENTS.md  # 개발 안내(AI 코딩 도구용)
+│   ├── docs/                  # 구조·업무 규칙·보안·표준·운영·계약 문서
+│   ├── build_dashboard.py     # 통합문서 생성기
+│   ├── powerquery/*.pq        # Power Query(M) 원본
+│   ├── vba/  pages/  tools/  data/
+│   └── KIS_PM_Dashboard.xlsm  # 생성된 통합문서 — git 제외(토큰 캐시·매매기록)
+└── 수집기업_valuesearch.xlsx   # NICS 업종 분류 원천(VALUESearch 내보내기, 유료 자료 — 비공개 저장소에만)
 ```
 
-### 2.2. 지원되는 주요 API 카테고리
+## 준비
 
-- 아래 카테고리 및 폴더 구조는 examples_llm/, examples_user/ 폴더 모두 동일하게 적용됩니다.
+1. Windows + Microsoft 365 Excel(한국어판에서 검증).
+2. KIS Developers에서 **실전투자** 앱키를 발급받고 아래 [KIS 설정 파일](#kis-설정-파일)을 만듭니다.
+3. 통합문서를 (다시) 만들 때만 Python 3.11+와 패키지가 필요합니다.
 
-| 카테고리 | 설명 | 폴더명 |
-| --- | --- | --- |
-| 인증 | 접근토큰 발급, 웹소켓 접속키 발급 | `auth` |
-| 국내주식 | 국내 주식 시세, 주문, 잔고 등 | `domestic_stock` |
-| 국내채권 | 국내 채권 시세, 주문 등 | `domestic_bond` |
-| 국내선물옵션 | 국내 파생상품 관련 | `domestic_futureoption` |
-| 해외주식 | 해외 주식 시세, 주문 등 | `overseas_stock` |
-| 해외선물옵션 | 해외 파생상품 관련 | `overseas_futureoption` |
-| ELW | ELW 시세 API | `elw` |
-| ETF/ETN | ETF, ETN 시세 API | `etfetn` |
-
-### 2.3. 주요 파일 설명
-
-### `examples_llm/` - llm용 기능 단위 샘플 코드
-
-**API별 개별 폴더 구조**: 단일 API 기능을 독립 폴더로 분리하여, LLM이 관련 코드를 쉽게 탐색할 수 있도록 구성
-- **한줄 호출 파일**: `[함수명].py` – 단일 기능을 호출하는 최소 단위 코드 (예: `inquire_price.py`)
-- **테스트 파일**: `chk_[함수명].py` – 호출 결과를 검증하는 테스트 실행 코드 (예: `chk_inquire_price.py`)
-
-### `examples_user/` - 사용자용 통합 예제 코드
-
-**카테고리별 개별 폴더 구조**: 카테고리(상품)별로 모든 기능을 통합하여, 사용자가 쉽게 샘플 코드를 탐색하고 실행할 수 있도록 구성
-- **통합 함수 파일**: `[카테고리]_functions.py` - 해당 카테고리의 모든 API 기능이 통합된 함수 모음
-- **실행 예제 파일**: `[카테고리]_examples.py` - 실제 사용 예제를 기반으로 한 실행 코드
-- **웹소켓 통합 함수 파일 및 실행 예제 파일**: `[카테고리]_functions_ws.py`, `[카테고리]_examples_ws.py`
-
-### `kis_auth.py` - 인증 및 공통 기능
-
-- 접근토큰 발급 및 관리
-- API 호출 공통 함수
-- 실전투자/모의투자 환경 전환 지원
-- 웹소켓 연결 설정 기능 제공
-
-### 2.4. AI 트레이딩 도구
-
-샘플 코드 외에, Open API를 활용한 **전략 설계 → 백테스팅 → 주문 실행** 파이프라인을 제공합니다.
-
-```mermaid
-graph LR
-    SB[strategy_builder] -->|".kis.yaml"| BT[backtester]
-    BT -->|"검증 완료"| SB
-    SB -->|"BUY/SELL/HOLD"| KIS[KIS Open API]
+```powershell
+pip install pywin32 pyyaml requests
+python excel_dashboard/build_dashboard.py   # 기존 통합문서가 있으면 자동 이관 후 다시 만듦(약 8~9분)
 ```
 
-| 디렉토리 | 역할 | 상세 |
-|----------|------|------|
-| `strategy_builder/` | 전략 설계 + 시그널 생성 | 80개 기술지표, 10개 프리셋 전략, BUY/SELL/HOLD 신호 ([README](strategy_builder/README.md)) |
-| `backtester/` | 과거 검증 + 파라미터 최적화 | Docker 기반 QuantConnect Lean, HTML 리포트 ([README](backtester/README.md)) |
-| `MCP/` | AI 도구 연결 | KIS Code Assistant + Trading MCP ([README](MCP/README.MD)) |
+통합문서를 다른 PC로 옮겨 쓰는 방법과 빌드 옵션은 [excel_dashboard/README.md](excel_dashboard/README.md) 2~3절을 보세요.
 
-#### 10개 프리셋 전략
+### KIS 설정 파일
 
-`strategy_builder`와 `backtester` 양쪽에서 동일하게 지원합니다.
-
-| # | 전략명 | 유형 | 한줄 설명 |
-|---|--------|------|-----------|
-| 01 | 골든크로스 | 추세추종 | 단기 이동평균이 장기 이동평균을 상향 돌파하면 매수 |
-| 02 | 모멘텀 | 추세추종 | 최근 N일 수익률이 높은 종목을 매수 |
-| 03 | 52주 신고가 | 돌파매매 | 종가가 52주 최고가를 갱신하면 매수 |
-| 04 | 연속 상승/하락 | 추세추종 | N일 연속 종가 상승 시 매수, N일 연속 하락 시 매도 |
-| 05 | 이격도 | 역추세 | 종가/이동평균 비율로 과열(매도)·침체(매수) 판단 |
-| 06 | 돌파 실패 | 손절 | 전고점 돌파 후 다시 아래로 빠지면 손절 |
-| 07 | 강한 종가 | 모멘텀 | 종가가 당일 고가 근처에서 마감하면 매수 |
-| 08 | 변동성 확장 | 돌파매매 | 변동성이 줄어든 뒤 급등하면 매수 |
-| 09 | 평균회귀 | 역추세 | 가격이 평균에서 크게 벗어나면 반대 방향으로 매매 |
-| 10 | 추세 필터 | 추세추종 | 장기 이동평균 위에서 상승 중이면 매수 |
-
-#### .kis.yaml — 공유 전략 포맷
-
-`strategy_builder`에서 설계한 전략을 `.kis.yaml`로 내보내면, `backtester`에서 그대로 Import하여 백테스트를 수행할 수 있습니다.
-포맷 상세는 [strategy_builder/README.md](strategy_builder/README.md#kisyaml-포맷) 또는 [backtester/README.md](backtester/README.md#kisyaml-포맷)를 참고하세요.
-
-## 3. 사전 환경설정 안내
-
-### 3.1. Python 환경 요구사항
-
-- **Python 3.11 이상** 필요
-- **uv** **패키지 매니저 사용** 권장 (빠르고 간편한 의존성 관리)
-
-### 3.2. uv 설치 방법
-
-- 간편 설정을 위해 uv를 권장합니다
-
-```bash
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 설치 확인
-uv --version
-# uv 0.x.x ... -> 설치 완료
-```
-
-### 3.3. 프로젝트 클론 및 환경 설정
-
-```bash
-# 저장소 클론
-git clone https://github.com/koreainvestment/open-trading-api
-cd open-trading-api
-
-# uv를 사용한 의존성 설치 - 한줄로 끝
-uv sync
-```
-
-### 3.4. KIS Open API 신청 및 설정
-
-🍀 [서비스 신청 안내 바로가기](https://apiportal.koreainvestment.com/about-howto)
-1. 한국투자증권 **계좌 개설 및 ID 연결**
-2. 한국투자증권 홈페이지 or 앱에서 **Open API 서비스 신청**
-3. **앱키(App Key)**, **앱시크릿(App Secret)** 발급
-4. **모의투자** 및 **실전투자** 앱키 각각 준비
-
-### 3.5. kis_devlp.yaml 설정
-
-- 본인의 계정 설정을 위해 `kis_devlp.yaml` 파일을 수정합니다.
-- 기본 경로는 `~/KIS/config/kis_devlp.yaml`입니다. 폴더가 없으면 생성해 주세요.
-- 프로젝트 루트의 `kis_devlp.yaml`을 `~/KIS/config/`로 복사한 뒤 수정하는 것을 권장합니다.
-- 경로를 변경하고 싶다면 `kis_auth.py`의 `config_root` 값을 수정하면 됩니다.
-
-```bash
-# 설정 폴더 생성 및 파일 복사
-mkdir -p ~/KIS/config
-cp kis_devlp.yaml ~/KIS/config/
-```
-
-1. `~/KIS/config/kis_devlp.yaml` 파일 열기
-2. **앱키와 앱시크릿** 정보 입력
-3. **HTS ID** 정보 입력
-4. **계좌번호** 정보 입력 (앞 8자리와 뒤 2자리 구분)
-5. **저장** 후 닫기
+앱키·시크릿은 통합문서에 저장하지 않고 Power Query가 `~/KIS/config/kis_devlp.yaml`(Windows: `%USERPROFILE%\KIS\config\kis_devlp.yaml`)을 직접 읽습니다.
+필수 항목은 `my_app`·`my_sec`·`prod` 세 개입니다(KIS 공식 샘플코드와 같은 형식이라 이미 쓰던 파일이 있으면 그대로 됩니다).
 
 ```yaml
-# 실전투자
-my_app: "여기에 실전투자 앱키 입력"
-my_sec: "여기에 실전투자 앱시크릿 입력"
+# 실전투자 앱키·시크릿 (시세·순위·수급 API는 실전 도메인에서만 조회)
+my_app: "실전투자 앱키"
+my_sec: "실전투자 앱시크릿"
 
-# 모의투자
-paper_app: "여기에 모의투자 앱키 입력"
-paper_sec: "여기에 모의투자 앱시크릿 입력"
-
-# HTS ID(KIS Developers 고객 ID) - 체결통보, 나의 조건 목록 확인 등에 사용됩니다.
-my_htsid: "사용자 HTS ID"
-
-# 계좌번호 앞 8자리
-my_acct_stock: "증권계좌 8자리"
-my_acct_future: "선물옵션계좌 8자리"
-my_paper_stock: "모의투자 증권계좌 8자리"
-my_paper_future: "모의투자 선물옵션계좌 8자리"
-
-# 계좌번호 뒤 2자리
-my_prod: "01" # 종합계좌
-# my_prod: "03" # 국내선물옵션 계좌
-# my_prod: "08" # 해외선물옵션 계좌
-# my_prod: "22" # 개인연금 계좌
-# my_prod: "29" # 퇴직연금 계좌
-
-# User-Agent(기본값 사용 권장, 변경 불필요)
-my_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# 실전 REST 도메인
+prod: "https://openapi.koreainvestment.com:9443"
 ```
 
-### 3.6. 실행파일 내 인증 설정 검토
+- 이 파일은 **git에 넣지 않습니다.** 저장소 루트에 같은 이름의 파일을 두더라도 `.gitignore`가 막습니다.
+- 경로를 바꾸려면 통합문서 [설정] 시트의 `cfg_path`를 고치거나 빌드할 때 `--cfg <경로>`를 줍니다.
 
-- 실행하려는 파일에서 인증 관련 설정을 검토 혹은 변경해줍니다. 국내주식 기능 전체를 이용하시려면, `domestic_stock/domestic_stock_examples.py` 파일을 확인해주세요. 
-ka.auth() 함수의 svr, product 매개변수를 아래와 같이 수정하면 실전환경(prod)에서 위탁계좌(-01)로 매매 테스트가 가능합니다.
+## 보안·공유
 
-```python
-import kis_auth as ka
+- 이 저장소는 비공개 GitHub `financeis/kis-pm-dashboard`(원격 `origin`)에만 올립니다. 유료 자료(VALUESearch 파일)가 들어 있으니 공개로 바꾸지 마세요.
+- 통합문서의 숨김 시트 `_sys`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`·`history/`는 git에서 제외되며, 남에게 보낼 때는 토큰 표를 지우세요.
+- 자세한 규칙은 [excel_dashboard/docs/security.md](excel_dashboard/docs/security.md).
 
-# 실전투자 인증
-ka.auth(svr="prod", product="01") # 모의투자: svr="vps"
-```
+## 출처
 
-### 3.7. 전략 빌더 / 백테스터 환경 설정 (선택)
+이 저장소는 한국투자증권 공식 샘플 코드 저장소 [koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api)에서 출발했습니다.
+대시보드의 API 호출(URL·tr_id·파라미터)과 종목 마스터 파싱은 그 저장소의 `examples_llm/`·`stocks_info/`를 참고해 Power Query(M)로 옮긴 것이며,
+대시보드와 관계없는 공식 예제(샘플 코드·전략 빌더·백테스터·MCP 등)는 2026-10-08에 이 저장소에서 지웠습니다. API 사양은 공식 저장소(원격 `upstream`)나 [KIS Developers 포털](https://apiportal.koreainvestment.com/)에서 확인하세요.
 
-전략 설계 및 백테스팅 기능을 사용하려면 추가 설정이 필요합니다.
-
-| 항목 | 설치 | 용도 |
-|------|------|------|
-| Node.js 18+ | [nodejs.org](https://nodejs.org/) | strategy_builder, backtester 프론트엔드 |
-| Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop) | backtester (Lean 엔진) |
-
-## 4. 샘플 코드 실행
-
-### 4.1. 샘플 코드 실행
-
-- **examples_user 기준**
-
-```bash
-# 국내주식 샘플 코드 실행 (examples_user/domestic_stock/)
-uv run python domestic_stock_examples.py # REST 방식
-uv run python domestic_stock_examples_ws.py  # Websocket 방식 
-```
-
-domestic_stock_examples.py에는 여러 함수가 포함되어 있으므로, 사용하려는 함수만 남기고 나머지는 주석 처리한 후, 입력값을 수정하여 호출해 주세요.
-
-- **examples_llm 기준**
-
-```bash
-# 국내주식 > 주식현재가 시세 샘플 코드 실행 (examples_llm/domestic_stock/inquire_price/)
-uv run python chk_inquire_price.py
-```
-
-examples_llm 은 각 기능별로 개별 실행 파일(chk_*.py)이 분리되어 있어, 특정 기능만 테스트하고자 할 때 유용합니다.
-
-### 4.2. 예제 코드 샘플 (examples_user)
-
-```python
-# REST API 호출 예제 - domestic_stock_examples.py
-import sys
-import logging
-import pandas as pd
-sys.path.extend(['..', '.'])
-
-import kis_auth as ka
-from domestic_stock_functions import *
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# 인증
-ka.auth()
-trenv = ka.getTREnv()
-
-# 삼성전자 현재가 시세 조회
-result = inquire_price(env_dv="real", fid_cond_mrkt_div_code="J", fid_input_iscd="005930")
-print(result)
-```
-
-```python
-# 웹소켓 호출 예제 - domestic_stock_examples_ws.py
-import sys
-import logging
-import pandas as pd
-sys.path.extend(['..', '.'])
-
-import kis_auth as ka
-from domestic_stock_functions_ws import *
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# 인증
-ka.auth()
-ka.auth_ws()
-trenv = ka.getTREnv()
-
-# 웹소켓 선언
-kws = ka.KISWebSocket(api_url="/tryitout")
-
-# 삼성전자, sk하이닉스 실시간 호가 구독
-kws.subscribe(request=asking_price_krx, data=["005930", "000660"])
-```
-
-### 4.3. 전략 빌더 / 백테스터 실행
-
-```bash
-# Strategy Builder (전략 설계 + 시그널)
-cd strategy_builder
-./start.sh
-
-# Backtester (백테스팅)
-cd backtester
-./start.sh
-```
-
-상세 실행 방법은 각 디렉토리의 README를 참고하세요:
-- [strategy_builder/README.md](strategy_builder/README.md)
-- [backtester/README.md](backtester/README.md)
-
-## 5. 문제 해결 가이드
-
-### 토큰 오류 시
-
-```python
-import kis_auth as ka
-
-# 토큰 재발급 - 1분당 1회 발급됩니다.
-ka.auth(svr="prod")  # 또는 "vps"
-```
-
-### 설정 파일 오류 시
-
-- `kis_devlp.yaml` 파일의 앱키, 앱시크릿이 올바른지 확인
-- 계좌번호 형식이 맞는지 확인 (앞 8자리 + 뒤 2자리)
-- 실시간 시세(WebSocket) 이용 중 ‘No close frame received’ 오류가 발생하는 경우, `kis_devlp.yaml`에 입력하신 HTS ID가 정확한지 확인
-
-### 의존성 오류 시
-
-```bash
-# 의존성 재설치
-uv sync --reinstall
-```
-
-### Docker 오류 (backtester)
-
-```bash
-docker info              # Docker Desktop 실행 상태 확인
-docker images | grep lean # Lean 이미지 확인 (첫 실행 시 자동 다운로드)
-```
-
-### 초당 거래건수 초과 (`EGW00201`)
-
-모의투자 계좌는 REST API 호출 제한이 낮습니다.
-단일 조회에는 문제없으나, 파라미터 최적화처럼 연속 호출이 많으면 실전투자 계좌를 권장합니다.
-
----
-
-# 📧 문의사항
-
-- [💬 한국투자증권 Open API 챗봇](https://chatgpt.com/g/g-68b920ee7afc8191858d3dc05d429571-hangugtujajeunggweon-open-api-seobiseu-gpts)에 언제든 궁금한 점을 물어보세요.
+KIS Open API 이용 결과와 이 대시보드로 내린 투자 판단에 대한 책임은 사용자에게 있습니다.
