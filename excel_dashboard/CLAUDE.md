@@ -1,7 +1,7 @@
 # KIS PM 일일 대시보드 (excel_dashboard)
 
 한국투자증권(KIS) Open API 위에 만든 **개인용 주식 운용 대시보드**다. Excel(Microsoft 365 한국어판) + Power Query가 KIS REST를 직접 조회하고, 파이썬 빌더가 Excel COM으로 `KIS_PM_Dashboard.xlsm`(VBA 버튼 포함)을 생성·재생성한다. 사용자는 1명 — KOSPI·KOSDAQ 개별종목 2개월 모의투자대회(수익률·샤프 평가) 참가자로, 대회 종목 527개와 보유·관심 수십 종목을 매일 본다. 로컬 Windows PC 한 대, 조회 전용, 네트워크 서비스·다중 사용자 없음.
-이 저장소는 KIS 공식 예제 저장소에서 출발했지만 2026-10-08에 대시보드와 무관한 공식 예제(`examples_llm/`, `stocks_info/` 등)를 지워 대시보드 전용이 됐다. API 사양(URL·tr_id·파라미터)은 `kis-code-assistant` MCP나 KIS 공식 예제 저장소(`upstream`, github.com/koreainvestment/open-trading-api)에서 확인한다(로컬: `git show upstream/main:examples_llm/...`). 저장소는 개인 비공개 GitHub `financeis/kis-pm-dashboard`(원격 `origin`)로 올리고, KIS 공식 저장소(`upstream`)에는 올리지 않는다.
+이 저장소는 KIS 공식 예제 저장소에서 출발했지만 2026-10-08에 대시보드와 무관한 공식 예제(`examples_llm/`, `stocks_info/` 등)를 지워 대시보드 전용이 됐다. API 사양(URL·tr_id·파라미터)은 `kis-code-assistant` MCP나 KIS 공식 예제 저장소(`upstream`, github.com/koreainvestment/open-trading-api)에서 확인한다(로컬: `git show upstream/main:examples_llm/...`). 저장소는 **공개** GitHub `financeis/kis-pm-dashboard`(원격 `origin`, 2026-10-09 공개 전환)로 올리고, KIS 공식 저장소(`upstream`)에는 올리지 않는다.
 
 ## 프로젝트 구조
 

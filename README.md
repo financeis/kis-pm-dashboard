@@ -1,4 +1,4 @@
-# KIS PM Dashboard
+# 타임폴리오 대회용 Dashboard
 
 KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를 운용역처럼 관리하기 위한 **Excel 일일 대시보드**입니다.
 한국투자증권(KIS) Open API를 Excel Power Query가 직접 조회하고, 파이썬 빌더가 Excel COM으로 통합문서 `KIS_PM_Dashboard.xlsm`(VBA 버튼 포함)을 만들거나 다시 만듭니다.
@@ -9,7 +9,7 @@ KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를
 
 ## 화면과 기능
 
-> 아래 화면은 실제 통합문서를 캡처한 것입니다(데이터 기준 2026-10-02 03:10, 대회 D+21, Excel 확대/축소 55%).
+> 아래 화면은 실제 통합문서를 캡처한 것입니다(데이터 기준 2026-10-02 03:10·대회 D+21, [종목분석]은 2026-10-09 조회, Excel 확대/축소 55%).
 > 이미지를 누르면 원본 크기로 볼 수 있습니다.
 
 ### 대시보드 — 하루를 여는 첫 화면
@@ -47,10 +47,12 @@ KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를
 
 ### 종목분석 — 한 종목을 깊게 ([조회] 버튼)
 
-종목코드를 넣고 [조회]를 누르면 한 종목만 13개 구역을 한 번에 조회합니다(약 1분).
-120세션 가격과 투자자별 순매수·누적, 체결금액별 매매비중, 매물대, 외인·기관 추정가집계, 신용·공매도·대차 60세션,
-증권사별 목표가·월말 컨센서스, KIS 추정, 8분기 실적, 뉴스 40건, 이벤트가 들어 있습니다.
-(캡처한 통합문서에서는 아직 [조회]를 실행하지 않아 화면을 싣지 않았습니다.)
+![종목분석](excel_dashboard/docs/screenshots/stock-analysis.png)
+
+- 종목코드를 넣고 [조회]를 누르면 그 종목만 13개 구역을 한 번에 조회합니다(약 1분, 화면은 삼성전자).
+- 상단 요약(시장·대회 편입·NICS 분류·테마·현재가·52주 범위·시가총액·PER/PBR)과 구역 바로가기 1~10
+- 120세션 가격과 외국인·기관계·개인 누적 순매수 차트·일별 표, 뉴스·공시 제목 40건, 이 종목의 이벤트(−7일 ~ +60일)
+- 오른쪽·아래 구역: 체결금액별 매매비중, 매물대, 외인·기관 추정가집계, 신용·공매도·대차 60세션, 증권사별 목표가·월말 컨센서스, KIS 추정, 8분기 실적
 
 ### 뉴스·이벤트
 
@@ -112,7 +114,7 @@ KOSPI·KOSDAQ 개별종목 모의투자대회(수익률·샤프지수 평가)를
 │   ├── powerquery/*.pq        # Power Query(M) 원본
 │   ├── vba/  pages/  tools/  data/
 │   └── KIS_PM_Dashboard.xlsm  # 생성된 통합문서 — git 제외(토큰 캐시·매매기록)
-└── 수집기업_valuesearch.xlsx   # NICS 업종 분류 원천(VALUESearch 내보내기, 유료 자료 — 비공개 저장소에만)
+└── 수집기업_valuesearch.xlsx   # NICS 업종 분류 원천(VALUESearch 내보내기)
 ```
 
 ## 준비
@@ -144,17 +146,3 @@ prod: "https://openapi.koreainvestment.com:9443"
 
 - 이 파일은 **git에 넣지 않습니다.** 저장소 루트에 같은 이름의 파일을 두더라도 `.gitignore`가 막습니다.
 - 경로를 바꾸려면 통합문서 [설정] 시트의 `cfg_path`를 고치거나 빌드할 때 `--cfg <경로>`를 줍니다.
-
-## 보안·공유
-
-- 이 저장소는 비공개 GitHub `financeis/kis-pm-dashboard`(원격 `origin`)에만 올립니다. 유료 자료(VALUESearch 파일)가 들어 있으니 공개로 바꾸지 마세요.
-- 통합문서의 숨김 시트 `_sys`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`·`history/`는 git에서 제외되며, 남에게 보낼 때는 토큰 표를 지우세요.
-- 자세한 규칙은 [excel_dashboard/docs/security.md](excel_dashboard/docs/security.md).
-
-## 출처
-
-이 저장소는 한국투자증권 공식 샘플 코드 저장소 [koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api)에서 출발했습니다.
-대시보드의 API 호출(URL·tr_id·파라미터)과 종목 마스터 파싱은 그 저장소의 `examples_llm/`·`stocks_info/`를 참고해 Power Query(M)로 옮긴 것이며,
-대시보드와 관계없는 공식 예제(샘플 코드·전략 빌더·백테스터·MCP 등)는 2026-10-08에 이 저장소에서 지웠습니다. API 사양은 공식 저장소(원격 `upstream`)나 [KIS Developers 포털](https://apiportal.koreainvestment.com/)에서 확인하세요.
-
-KIS Open API 이용 결과와 이 대시보드로 내린 투자 판단에 대한 책임은 사용자에게 있습니다.

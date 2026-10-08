@@ -50,7 +50,7 @@
 ## 의존성과 git
 
 - 빌드는 Python 3 + `pywin32`·`pyyaml`(표준 라이브러리 외), 도구는 `requests`까지. 새 패키지를 들이면 README 준비 항목에 적는다. 파일 파싱은 표준 라이브러리(`xlsx_tables.py`)로 한다.
-- `.xlsm`·`backup/`·`history/`·Q.Pack PDF와 `kis_devlp.yaml`(저장소 루트·`~/KIS/config`)은 커밋하지 않고 수정하지 않는다. 저장소 루트 `수집기업_valuesearch.xlsx`는 사용자 결정으로 비공개 저장소에 커밋돼 있다 — 수정하지 않고, 사용자가 새로 내보낸 파일로 바꾸면 그대로 커밋한다. 파일은 경로를 지정해 스테이징한다.
+- `.xlsm`·`backup/`·`history/`·Q.Pack PDF와 `kis_devlp.yaml`(저장소 루트·`~/KIS/config`)은 커밋하지 않고 수정하지 않는다. 저장소 루트 `수집기업_valuesearch.xlsx`는 사용자 결정으로 저장소에 커밋돼 있다 — 수정하지 않고, 사용자가 새로 내보낸 파일로 바꾸면 그대로 커밋한다. 파일은 경로를 지정해 스테이징한다.
 - 코드 주석·문서는 한국어. 파이썬 이름은 모듈·함수·변수 snake_case, 클래스 PascalCase, 상수 UPPER_SNAKE_CASE, 널리 알려진 것(URL·ID 등) 외의 축약어 금지. 공개 함수에는 목적·인자·반환·예외·예시를 담은 docstring.
 
 ## 합치기 전 검증

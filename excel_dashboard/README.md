@@ -29,7 +29,7 @@ excel_dashboard/
    시세·순위·수급 API는 모의투자 도메인에서 지원되지 않는 경우가 많아 실전 도메인으로 조회만 합니다.
 2. Windows + Microsoft 365 Excel (LET·FILTER·SORTBY·TAKE·VSTACK·HSTACK·XLOOKUP·LAMBDA 사용).
 3. **업종 분류 파일**: VALUESearch에서 내보낸 `수집기업_valuesearch.xlsx`(시트 `Sheet2`, 1행 머리글). 기본 위치는 저장소 루트이며,
-   옮기면 [설정]의 `vs_path`만 바꾸면 됩니다. 이 파일은 비공개 저장소에 들어 있어 clone하면 함께 받습니다(유료 자료이므로 저장소를 공개하지 마세요).
+   옮기면 [설정]의 `vs_path`만 바꾸면 됩니다. 이 파일은 저장소에 들어 있어 clone하면 함께 받습니다.
 4. 통합문서를 다시 만들 때만 Python + `pywin32`, `pyyaml` 필요(개발·검증 도구는 `requests`도 사용).
 
 ## 2. 통합문서 만들기·다시 만들기
@@ -58,7 +58,7 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 
 ### 다른 PC(메인 컴퓨터)에서 쓰기
 
-코드는 GitHub 비공개 저장소(`financeis/kis-pm-dashboard`)에 있지만, **통합문서는 git에 올리지 않으므로**(접근토큰·매매기록이 들어 있음) 직접 옮깁니다.
+코드는 GitHub 저장소(`financeis/kis-pm-dashboard`)에 있지만, **통합문서는 git에 올리지 않으므로**(접근토큰·매매기록이 들어 있음) 직접 옮깁니다.
 
 **A. 통합문서를 옮겨 쓰기 — Python 필요 없음(추천)**
 
@@ -75,7 +75,7 @@ python excel_dashboard/build_dashboard.py --cfg D:/my/kis_devlp.yaml   # 설정 
 **B. 메인 PC에서 다시 만들기 — 코드를 고치거나 새로 만들 때만**
 
 ```powershell
-git clone https://github.com/financeis/kis-pm-dashboard.git   # 비공개 저장소: 처음에 GitHub 로그인 창이 뜸
+git clone https://github.com/financeis/kis-pm-dashboard.git
 cd kis-pm-dashboard
 pip install pywin32 pyyaml requests
 # kis_devlp.yaml을 %USERPROFILE%\KIS\config\에 두고, 노트북의 KIS_PM_Dashboard.xlsm(+ history\)을 excel_dashboard\에 복사한 뒤
@@ -208,7 +208,7 @@ VBA로 자동화할 때는 `Application.CalculateUntilAsyncQueriesDone`을 쓰�
 
 - 앱키·시크릿은 통합문서에 저장되지 않습니다(Power Query가 `kis_devlp.yaml`을 직접 읽음).
 - 숨김 시트 `_sys`의 `tblToken`에 24시간짜리 접근토큰이 캐시됩니다. 통합문서·`backup/`의 백업본에도 들어 있으니 남에게 보내기 전에 이 표 내용을 지우세요. `.xlsm`·`backup/`·`history/`는 git에서 제외됩니다.
-- 코드는 비공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력은 저장소에 들어가지 않습니다. VALUESearch 파일(유료 자료)은 비공개라서 넣었으니 저장소를 공개로 바꾸지 마세요.
+- 코드는 공개 GitHub 저장소 `financeis/kis-pm-dashboard`(git 원격 `origin`)에 올립니다. KIS 공식 저장소는 `upstream`이며 거기에는 올리지 않습니다. 통합문서·백업·이력은 저장소에 들어가지 않습니다(앱키·토큰·매매기록 보호).
 - `kis_devlp.yaml`은 git에 들어 있지 않습니다(2026-10-08에 공식 예제의 빈 양식을 저장소에서 뺌). 저장소 루트에 이 파일을 두더라도 `.gitignore`가 막으며, 실제 값은 `~/KIS/config/kis_devlp.yaml`에만 두세요.
 - 대회 계좌 잔고는 자동으로 가져오지 않습니다(모의투자 앱키 없음). 대회 체결 내역을 [매매일지]에 옮겨 적습니다.
 

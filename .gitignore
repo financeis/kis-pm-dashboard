@@ -53,5 +53,5 @@ settings.local.json
 .dryforge/
 
 # ===== 사용자 입력 자료 (excel_dashboard가 읽기만 함, 커밋 금지) =====
-# 수집기업_valuesearch.xlsx는 비공개 저장소에 넣기로 함(2026-10-02, 사용자 결정) — 공개 저장소로 옮기면 다시 제외할 것
+# 수집기업_valuesearch.xlsx는 저장소에 넣음(VALUESearch 홈페이지 공개 자료라 공개 저장소에도 둠 — 2026-10-09 사용자 결정)
 /2025072910034185K_02_01.pdf
